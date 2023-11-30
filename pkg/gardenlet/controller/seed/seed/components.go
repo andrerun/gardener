@@ -16,6 +16,7 @@ package seed
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/Masterminds/semver/v3"
 	proberapi "github.com/gardener/dependency-watchdog/api/prober"
@@ -41,6 +42,7 @@ import (
 	"github.com/gardener/gardener/pkg/component/etcd"
 	"github.com/gardener/gardener/pkg/component/extensions"
 	"github.com/gardener/gardener/pkg/component/extensions/operatingsystemconfig/downloader"
+	"github.com/gardener/gardener/pkg/component/gardenercustommetrics"
 	"github.com/gardener/gardener/pkg/component/kubeapiserver"
 	kubeapiserverconstants "github.com/gardener/gardener/pkg/component/kubeapiserver/constants"
 	"github.com/gardener/gardener/pkg/component/kubeproxy"
@@ -60,6 +62,7 @@ import (
 	"github.com/gardener/gardener/pkg/component/vpnauthzserver"
 	"github.com/gardener/gardener/pkg/component/vpnseedserver"
 	"github.com/gardener/gardener/pkg/component/vpnshoot"
+	"github.com/gardener/gardener/pkg/features"
 	"github.com/gardener/gardener/pkg/gardenlet/apis/config"
 	seedpkg "github.com/gardener/gardener/pkg/operation/seed"
 	"github.com/gardener/gardener/pkg/utils"
@@ -243,6 +246,32 @@ func defaultDependencyWatchdogs(
 	}
 
 	return
+}
+
+// defaultGardenerCustomMetics creates a [component.Deployer] for the gardener-custom-metrics component.
+func defaultGardenerCustomMetics(
+	client client.Client,
+	seedVersion *semver.Version,
+	imageVector imagevectorutils.ImageVector,
+	secretsManager secretsmanager.Interface,
+	gardenNamespaceName string) (component.DeployWaiter, error) {
+
+	image, err := imageVector.FindImage(imagevector.ImageNameGardenerCustomMetics, imagevectorutils.TargetVersion(seedVersion.String()))
+	if err != nil {
+		return nil, fmt.Errorf("An error occurred while creating the gardener custom-metrics-component - "+
+			"failed to find the necessary metrics adapter image '%s' for seed version '%s' in the image vector. "+
+			"The error message reported by the underlying operation follows: %w",
+			imagevector.ImageNameGardenerCustomMetics,
+			seedVersion,
+			err)
+	}
+
+	return gardenercustommetrics.NewGardenerCustomMetrics(
+		gardenNamespaceName,
+		image.String(),
+		features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling),
+		client,
+		secretsManager), nil
 }
 
 func defaultVPNAuthzServer(

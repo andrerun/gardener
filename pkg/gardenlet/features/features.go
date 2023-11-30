@@ -38,5 +38,6 @@ func GetFeatures() []featuregate.Feature {
 		features.ContainerdRegistryHostsDir,
 		features.APIServerFastRollout,
 		features.UseGardenerNodeAgent,
+		features.BilinearAutoscaling,
 	}
 }

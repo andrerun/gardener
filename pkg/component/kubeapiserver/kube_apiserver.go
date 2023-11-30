@@ -34,6 +34,7 @@ import (
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/component"
 	"github.com/gardener/gardener/pkg/component/apiserver"
+	"github.com/gardener/gardener/pkg/component/kubeapiserver/bipa"
 	"github.com/gardener/gardener/pkg/utils"
 	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/kubernetes/health"
@@ -283,6 +284,10 @@ func (k *kubeAPIServer) Deploy(ctx context.Context) error {
 		return err
 	}
 
+	if err := k.reconcileBilinearPodAutoscaler(ctx, deployment.Name); err != nil {
+		return err
+	}
+
 	if err := k.reconcileSecretETCDEncryptionConfiguration(ctx, secretETCDEncryptionConfiguration); err != nil {
 		return err
 	}
@@ -437,6 +442,12 @@ func (k *kubeAPIServer) Deploy(ctx context.Context) error {
 }
 
 func (k *kubeAPIServer) Destroy(ctx context.Context) error {
+	deployment := k.emptyDeployment()
+	err := bipa.NewBilinearPodAutoscaler(k.namespace, deployment.Name).DeleteFromServer(ctx, k.client.Client())
+	if err != nil {
+		return err
+	}
+
 	return kubernetesutils.DeleteObjects(ctx, k.client.Client(),
 		k.emptyManagedResource(),
 		k.emptyManagedResourceSecret(),
@@ -444,7 +455,7 @@ func (k *kubeAPIServer) Destroy(ctx context.Context) error {
 		k.emptyVerticalPodAutoscaler(),
 		k.emptyHVPA(),
 		k.emptyPodDisruptionBudget(),
-		k.emptyDeployment(),
+		deployment,
 		k.emptyServiceAccount(),
 		k.emptyRoleHAVPN(),
 		k.emptyRoleBindingHAVPN(),
@@ -568,4 +579,18 @@ func getLabels() map[string]string {
 		v1beta1constants.LabelApp:  v1beta1constants.LabelKubernetes,
 		v1beta1constants.LabelRole: v1beta1constants.LabelAPIServer,
 	}
+}
+
+func (k *kubeAPIServer) reconcileBilinearPodAutoscaler(ctx context.Context, deploymentName string) error {
+	return bipa.NewBilinearPodAutoscaler(k.namespace, deploymentName).Reconcile(
+		ctx,
+		k.client.Client(),
+		&bipa.DesiredStateParameters{
+			IsEnabled: k.values.Autoscaling.AutoscalingMode == apiserver.AutoscalingModeBilinear &&
+				k.values.Autoscaling.Replicas != nil &&
+				*k.values.Autoscaling.Replicas != 0,
+			MinReplicaCount:        k.values.Autoscaling.MinReplicas,
+			MaxReplicaCount:        k.values.Autoscaling.MaxReplicas,
+			ContainerNameApiserver: ContainerNameKubeAPIServer,
+		})
 }

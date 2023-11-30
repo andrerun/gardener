@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: gardener-custom-metrics
+  namespace: {{ .Namespace }}
+spec:
+  internalTrafficPolicy: Cluster
+  ipFamilies:
+    - IPv4
+  ipFamilyPolicy: SingleStack
+  ports:
+    - port: 443
+      protocol: TCP
+      targetPort: 6443
+  publishNotReadyAddresses: true
+  selector:
+    app: gardener-custom-metrics
+    gardener.cloud/role: gardener-custom-metrics
+  sessionAffinity: None # TODO: Andrey: P1: What affinity do we want?
+  type: ClusterIP

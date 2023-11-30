@@ -38,6 +38,7 @@ import (
 	"github.com/gardener/gardener/pkg/component/clusteridentity"
 	"github.com/gardener/gardener/pkg/component/dependencywatchdog"
 	"github.com/gardener/gardener/pkg/component/etcd"
+	"github.com/gardener/gardener/pkg/component/gardenercustommetrics"
 	"github.com/gardener/gardener/pkg/component/hvpa"
 	"github.com/gardener/gardener/pkg/component/istio"
 	"github.com/gardener/gardener/pkg/component/kubeapiserverexposure"
@@ -53,6 +54,7 @@ import (
 	"github.com/gardener/gardener/pkg/component/vpa"
 	"github.com/gardener/gardener/pkg/component/vpnauthzserver"
 	"github.com/gardener/gardener/pkg/controllerutils"
+	"github.com/gardener/gardener/pkg/features"
 	seedpkg "github.com/gardener/gardener/pkg/operation/seed"
 	"github.com/gardener/gardener/pkg/utils/flow"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
@@ -188,8 +190,10 @@ func (r *Reconciler) runDeleteSeedFlow(
 
 	// setup for flow graph
 	var (
-		dnsRecord                = getManagedIngressDNSRecord(log, seedClient, r.GardenNamespace, seed.GetInfo().Spec.DNS, secretData, seed.GetIngressFQDN("*"), "")
-		clusterAutoscaler        = clusterautoscaler.NewBootstrapper(seedClient, r.GardenNamespace)
+		dnsRecord             = getManagedIngressDNSRecord(log, seedClient, r.GardenNamespace, seed.GetInfo().Spec.DNS, secretData, seed.GetIngressFQDN("*"), "")
+		clusterAutoscaler     = clusterautoscaler.NewBootstrapper(seedClient, r.GardenNamespace)
+		gardenerCustomMetrics = gardenercustommetrics.NewGardenerCustomMetrics(
+			r.GardenNamespace, "", features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling), seedClient, nil)
 		machineControllerManager = machinecontrollermanager.NewBootstrapper(seedClient, r.GardenNamespace)
 		kubeAPIServerIngress     = kubeapiserverexposure.NewIngress(seedClient, r.GardenNamespace, kubeapiserverexposure.IngressValues{})
 		kubeAPIServerService     = kubeapiserverexposure.NewInternalNameService(seedClient, r.GardenNamespace)
@@ -211,7 +215,11 @@ func (r *Reconciler) runDeleteSeedFlow(
 	)
 
 	var (
-		g                = flow.NewGraph("Seed cluster deletion")
+		g                            = flow.NewGraph("Seed cluster deletion")
+		destroyGardenerCustomMetrics = g.Add(flow.Task{
+			Name: "Destroying gardener-custom-metrics",
+			Fn:   component.OpDestroyAndWait(gardenerCustomMetrics).Destroy,
+		})
 		destroyDNSRecord = g.Add(flow.Task{
 			Name: "Destroying managed ingress DNS record (if existing)",
 			Fn:   func(ctx context.Context) error { return destroyDNSResources(ctx, dnsRecord) },
@@ -273,6 +281,7 @@ func (r *Reconciler) runDeleteSeedFlow(
 			Fn:   component.OpDestroyAndWait(fluentOperatorCustomResources).Destroy,
 		})
 		syncPointCleanedUp = flow.NewTaskIDs(
+			destroyGardenerCustomMetrics,
 			destroyNginxIngress,
 			destroyClusterAutoscaler,
 			destroyMachineControllerManager,

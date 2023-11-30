@@ -28,6 +28,7 @@ import (
 
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
+	"github.com/gardener/gardener/pkg/component/apiserver"
 	"github.com/gardener/gardener/pkg/controllerutils"
 	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 )
@@ -37,7 +38,7 @@ func (k *kubeAPIServer) emptyHVPA() *hvpav1alpha1.Hvpa {
 }
 
 func (k *kubeAPIServer) reconcileHVPA(ctx context.Context, hvpa *hvpav1alpha1.Hvpa, deployment *appsv1.Deployment) error {
-	if !k.values.Autoscaling.HVPAEnabled ||
+	if k.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeHVPA ||
 		k.values.Autoscaling.Replicas == nil ||
 		*k.values.Autoscaling.Replicas == 0 {
 		return kubernetesutils.DeleteObject(ctx, k.client.Client(), hvpa)

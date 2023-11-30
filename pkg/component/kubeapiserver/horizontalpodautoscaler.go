@@ -24,6 +24,7 @@ import (
 	"k8s.io/utils/pointer"
 
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	"github.com/gardener/gardener/pkg/component/apiserver"
 	"github.com/gardener/gardener/pkg/controllerutils"
 	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 )
@@ -43,7 +44,7 @@ func (k *kubeAPIServer) emptyHorizontalPodAutoscaler() *autoscalingv2.Horizontal
 }
 
 func (k *kubeAPIServer) reconcileHorizontalPodAutoscaler(ctx context.Context, hpa *autoscalingv2.HorizontalPodAutoscaler, deployment *appsv1.Deployment) error {
-	if k.values.Autoscaling.HVPAEnabled ||
+	if k.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeHPlusVClashing ||
 		k.values.Autoscaling.Replicas == nil ||
 		*k.values.Autoscaling.Replicas == 0 {
 		return kubernetesutils.DeleteObject(ctx, k.client.Client(), hpa)

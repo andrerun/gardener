@@ -526,6 +526,12 @@ func (r *Reconciler) runReconcileSeedFlow(
 			return err
 		}
 
+		gardenerCustomMetrics, err :=
+			defaultGardenerCustomMetics(seedClient, kubernetesVersion, r.ImageVector, secretsManager, r.GardenNamespace)
+		if err != nil {
+			return err
+		}
+
 		etcdDruid, err := sharedcomponent.NewEtcdDruid(
 			seedClient,
 			r.GardenNamespace,
@@ -611,6 +617,10 @@ func (r *Reconciler) runReconcileSeedFlow(
 			_ = g.Add(flow.Task{
 				Name: "Deploying HVPA controller",
 				Fn:   hvpa.Deploy,
+			})
+			_ = g.Add(flow.Task{
+				Name: "Deploying gardener-custom-metrics",
+				Fn:   gardenerCustomMetrics.Deploy,
 			})
 			_ = g.Add(flow.Task{
 				Name: "Deploying ETCD Druid",
