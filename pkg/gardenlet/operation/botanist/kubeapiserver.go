@@ -92,7 +92,6 @@ func (b *Botanist) DefaultKubeAPIServer(ctx context.Context) (kubeapiserver.Inte
 
 func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.AutoscalingConfig {
 	var (
-		hvpaEnabled               = features.DefaultFeatureGate.Enabled(features.HVPA)
 		useMemoryMetricForHvpaHPA = false
 		scaleDownDisabledForHvpa  = false
 		defaultReplicas           *int32
@@ -100,10 +99,6 @@ func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.Autoscaling
 		maxReplicas               int32 = 4
 		apiServerResources        corev1.ResourceRequirements
 	)
-
-	if b.ManagedSeed != nil {
-		hvpaEnabled = features.DefaultFeatureGate.Enabled(features.HVPAForShootedSeed)
-	}
 
 	if b.Shoot.Purpose == gardencorev1beta1.ShootPurposeProduction {
 		minReplicas = 2
@@ -119,11 +114,12 @@ func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.Autoscaling
 	}
 
 	nodeCount := b.Shoot.GetMinNodeCount()
-	if hvpaEnabled {
+	autoscalingMode := b.getAutoscalingMode()
+	if autoscalingMode == apiserver.AutoscalingModeHVPA {
 		nodeCount = b.Shoot.GetMaxNodeCount()
 	}
 
-	if hvpaEnabled {
+	if autoscalingMode != apiserver.AutoscalingModeHPlusVClashing {
 		apiServerResources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -141,7 +137,7 @@ func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.Autoscaling
 			minReplicas = *b.ManagedSeedAPIServer.Autoscaler.MinReplicas
 			maxReplicas = b.ManagedSeedAPIServer.Autoscaler.MaxReplicas
 
-			if !hvpaEnabled {
+			if autoscalingMode == apiserver.AutoscalingModeHPlusVClashing {
 				defaultReplicas = b.ManagedSeedAPIServer.Replicas
 				apiServerResources = corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -155,13 +151,32 @@ func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.Autoscaling
 
 	return apiserver.AutoscalingConfig{
 		APIServerResources:        apiServerResources,
-		HVPAEnabled:               hvpaEnabled,
+		AutoscalingMode:           autoscalingMode,
 		Replicas:                  defaultReplicas,
 		MinReplicas:               minReplicas,
 		MaxReplicas:               maxReplicas,
 		UseMemoryMetricForHvpaHPA: useMemoryMetricForHvpaHPA,
 		ScaleDownDisabledForHvpa:  scaleDownDisabledForHvpa,
 	}
+}
+
+func (b *Botanist) getAutoscalingMode() apiserver.AutoscalingMode {
+	// BilinearAutoscaling takes precedence
+	if features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling) {
+		return apiserver.AutoscalingModeBilinear
+	}
+
+	var isHvpaRequested bool
+	if b.ManagedSeed != nil {
+		isHvpaRequested = features.DefaultFeatureGate.Enabled(features.HVPAForShootedSeed)
+	} else {
+		isHvpaRequested = features.DefaultFeatureGate.Enabled(features.HVPA)
+	}
+
+	if isHvpaRequested {
+		return apiserver.AutoscalingModeHVPA
+	}
+	return apiserver.AutoscalingModeHPlusVClashing
 }
 
 func resourcesRequirementsForKubeAPIServer(nodeCount int32) corev1.ResourceRequirements {

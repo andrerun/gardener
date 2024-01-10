@@ -223,6 +223,13 @@ func (r *Reconciler) runReconcileSeedFlow(
 	if err != nil {
 		return err
 	}
+	
+	// TODO: Andrey: Move to instantiateComponents()
+	gardenerCustomMetrics, err :=
+		defaultGardenerCustomMetics(seedClient, kubernetesVersion, secretsManager, r.GardenNamespace)
+	if err != nil {
+		return err
+	}
 
 	var (
 		g = flow.NewGraph("Seed reconciliation")
@@ -409,6 +416,12 @@ func (r *Reconciler) runReconcileSeedFlow(
 		_ = g.Add(flow.Task{
 			Name:         "Deploying HVPA controller",
 			Fn:           c.hvpaController.Deploy,
+			Dependencies: flow.NewTaskIDs(syncPointReadyForSystemComponents),
+			SkipIf:       seedIsGarden,
+		})
+		_ = g.Add(flow.Task{
+			Name: "Deploying gardener-custom-metrics",
+			Fn:   gardenerCustomMetrics.Deploy,
 			Dependencies: flow.NewTaskIDs(syncPointReadyForSystemComponents),
 			SkipIf:       seedIsGarden,
 		})

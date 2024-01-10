@@ -76,6 +76,12 @@ const (
 	// owner: @dimityrmirchev
 	// alpha: v1.93.0
 	ShootManagedIssuer featuregate.Feature = "ShootManagedIssuer"
+
+	// BilinearAutoscaling is applied to a seed cluster and enables simultaneous independent horizontal and vertical scaling.
+	// This feature is incompatible with the HVPA and HVPAForShootedSeed features.
+	// owner @andrerun
+	// alpha: v1.93.0
+	BilinearAutoscaling featuregate.Feature = "BilinearAutoscaling"
 )
 
 // DefaultFeatureGate is the central feature gate map used by all gardener components.
@@ -112,6 +118,7 @@ var AllFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 	ShootManagedIssuer:              {Default: false, PreRelease: featuregate.Alpha},
 	ShootForceDeletion:              {Default: true, PreRelease: featuregate.Beta},
 	UseNamespacedCloudProfile:       {Default: false, PreRelease: featuregate.Alpha},
+	BilinearAutoscaling:                {Default: false, PreRelease: featuregate.Alpha},
 }
 
 // GetFeatures returns a feature gate map with the respective specifications. Non-existing feature gates are ignored.

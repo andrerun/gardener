@@ -16,6 +16,7 @@ package seed
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	fluentbitv1alpha2 "github.com/fluent/fluent-operator/v2/apis/fluentbit/v1alpha2"
@@ -45,6 +46,7 @@ import (
 	"github.com/gardener/gardener/pkg/component/extensions"
 	extensioncrds "github.com/gardener/gardener/pkg/component/extensions/crds"
 	"github.com/gardener/gardener/pkg/component/extensions/operatingsystemconfig/original/components/nodeagent"
+	"github.com/gardener/gardener/pkg/component/gardenercustommetrics"
 	kubeapiserver "github.com/gardener/gardener/pkg/component/kubernetes/apiserver"
 	kubeapiserverconstants "github.com/gardener/gardener/pkg/component/kubernetes/apiserver/constants"
 	kubeapiserverexposure "github.com/gardener/gardener/pkg/component/kubernetes/apiserverexposure"
@@ -499,6 +501,32 @@ func (r *Reconciler) newDependencyWatchdogs(seedSettings *gardencorev1beta1.Seed
 	}
 
 	return
+}
+
+// defaultGardenerCustomMetics creates a [component.Deployer] for the gardener-custom-metrics component.
+func defaultGardenerCustomMetics(
+	client client.Client,
+	seedVersion *semver.Version,
+	secretsManager secretsmanager.Interface,
+	gardenNamespaceName string) (component.DeployWaiter, error) {
+
+	image, err := imagevector.ImageVector().FindImage(
+		imagevector.ImageNameGardenerCustomMetics, imagevectorutils.TargetVersion(seedVersion.String()))
+	if err != nil {
+		return nil, fmt.Errorf("An error occurred while creating the %s component - "+
+			"failed to find an image version suitable for seed version '%s' in the image vector. "+
+			"The error message reported by the underlying operation follows: %w",
+			imagevector.ImageNameGardenerCustomMetics,
+			seedVersion,
+			err)
+	}
+
+	return gardenercustommetrics.NewGardenerCustomMetrics(
+		gardenNamespaceName,
+		image.String(),
+		features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling),
+		client,
+		secretsManager), nil
 }
 
 func (r *Reconciler) newVPNAuthzServer() (component.DeployWaiter, error) {

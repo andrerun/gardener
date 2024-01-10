@@ -21,10 +21,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+
+	"github.com/gardener/gardener/pkg/component/apiserver"
 )
 
 func (g *gardenerAPIServer) verticalPodAutoscaler() *vpaautoscalingv1.VerticalPodAutoscaler {
-	if g.values.Autoscaling.HVPAEnabled {
+	if g.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeHPlusVClashing {
 		return nil
 	}
 

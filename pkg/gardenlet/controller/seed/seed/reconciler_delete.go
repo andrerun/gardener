@@ -32,7 +32,9 @@ import (
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	"github.com/gardener/gardener/pkg/component"
 	"github.com/gardener/gardener/pkg/component/clusteridentity"
+	"github.com/gardener/gardener/pkg/component/gardenercustommetrics"
 	"github.com/gardener/gardener/pkg/controllerutils"
+	"github.com/gardener/gardener/pkg/features"
 	seedpkg "github.com/gardener/gardener/pkg/gardenlet/operation/seed"
 	"github.com/gardener/gardener/pkg/utils/flow"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
@@ -121,8 +123,16 @@ func (r *Reconciler) runDeleteSeedFlow(
 	}
 
 	var (
+		// TODO: Andrey: P0: Review - pattern changed
+		gardenerCustomMetrics = gardenercustommetrics.NewGardenerCustomMetrics(
+			r.GardenNamespace, "", features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling), seedClient, nil)
+
 		g = flow.NewGraph("Seed deletion")
 
+		destroyGardenerCustomMetrics = g.Add(flow.Task{
+			Name: "Destroying gardener-custom-metrics",
+			Fn:   component.OpDestroyAndWait(gardenerCustomMetrics).Destroy,
+		})
 		// Delete all ingress objects in garden namespace which are not created as part of ManagedResources. This can be
 		// removed once all seed system components are deployed as part of ManagedResources.
 		// See https://github.com/gardener/gardener/issues/6062 for details.
@@ -139,7 +149,6 @@ func (r *Reconciler) runDeleteSeedFlow(
 			Fn:     component.OpDestroyAndWait(c.clusterIdentity).Destroy,
 			SkipIf: !seedIsOriginOfClusterIdentity,
 		})
-
 		destroyDNSRecord = g.Add(flow.Task{
 			Name: "Destroying managed ingress DNS record (if existing)",
 			Fn:   component.OpDestroyAndWait(c.ingressDNSRecord).Destroy,
@@ -218,6 +227,7 @@ func (r *Reconciler) runDeleteSeedFlow(
 		})
 
 		// When the seed is the garden cluster then these components are reconciled by the gardener-operator.
+		// TODO: Andrey: P0: Does this affect GCMx?
 		destroyPlutono = g.Add(flow.Task{
 			Name:   "Destroying plutono",
 			Fn:     component.OpDestroyAndWait(c.plutono).Destroy,
@@ -283,6 +293,7 @@ func (r *Reconciler) runDeleteSeedFlow(
 		})
 
 		syncPointCleanedUp = flow.NewTaskIDs(
+			destroyGardenerCustomMetrics,
 			destroyClusterIdentity,
 			destroyCachePrometheus,
 			destroySeedPrometheus,

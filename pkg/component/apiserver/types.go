@@ -86,12 +86,20 @@ type AuditWebhook struct {
 	Version *string
 }
 
+type AutoscalingMode int8
+
+const (
+	AutoscalingModeBilinear       = 1 + iota // Simultaneous HPA on request rate and VPA on resource usage
+	AutoscalingModeHPlusVClashing            // Simultaneous HPA and VPA both on memory/CPU. Does not work well. Legacy.
+	AutoscalingModeHVPA
+)
+
 // AutoscalingConfig contains information for configuring autoscaling settings for the API server.
 type AutoscalingConfig struct {
+	// AutoscalingMode controls what strategy is used to scale kube-apiserver
+	AutoscalingMode AutoscalingMode
 	// APIServerResources are the resource requirements for the API server container.
 	APIServerResources corev1.ResourceRequirements
-	// HVPAEnabled states whether an HVPA object shall be deployed. If false, HPA and VPA will be used.
-	HVPAEnabled bool
 	// Replicas is the number of pod replicas for the API server.
 	Replicas *int32
 	// MinReplicas are the minimum Replicas for horizontal autoscaling.
