@@ -214,7 +214,7 @@ func (gcmx *GardenerCustomMetrics) deployServerCertificate(ctx context.Context) 
 		ctx,
 		&secretutils.CertificateSecretConfig{
 			Name:                        serverCertificateSecretName,
-			CommonName:                  fmt.Sprintf("%s.%s.svc", serviceName, gcmx.namespaceName),
+			CommonName:                  fmt.Sprintf("%s.%s.svc", serviceName, gcmx.namespaceName), // TODO: Andrey: P1: componentBaseName?
 			DNSNames:                    kutil.DNSNamesForService(serviceName, gcmx.namespaceName),
 			CertType:                    secretutils.ServerCert,
 			SkipPublishingCACertificate: true,
@@ -240,7 +240,7 @@ func getResourceConfigs(
 	const baseErrorMessage = "An error occurred while retrieving the list of resource config objects which serves as " +
 		"blueprint for the gardener-custom-metrics component"
 
-	manifestReaders, err := getManifests(namespaceName, containerImageName, serverCertificateSecret)
+	manifestReaders, err := resourceManifests.GetManifests(namespaceName, containerImageName, serverCertificateSecret)
 	if err != nil {
 		return nil, fmt.Errorf(baseErrorMessage+" - failed to retrieve resource manifest data. "+
 			"The error message reported by the underlying operation follows: %w",

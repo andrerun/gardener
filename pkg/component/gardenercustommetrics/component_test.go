@@ -28,11 +28,11 @@ import (
 
 //#region Fakes
 
-type testIsolation struct {
+type testBehaviorCapture struct {
 	DeployedResourceConfigs component.ResourceConfigs
 }
 
-func (ti *testIsolation) DeployResourceConfigs(
+func (capture *testBehaviorCapture) DeployResourceConfigs(
 	ctx context.Context,
 	client client.Client,
 	namespace string,
@@ -41,13 +41,9 @@ func (ti *testIsolation) DeployResourceConfigs(
 	registry *managedresources.Registry,
 	allResources component.ResourceConfigs,
 ) error {
-	ti.DeployedResourceConfigs = allResources
+	capture.DeployedResourceConfigs = allResources
 
 	return nil
-}
-
-func newTestIsolation() *testIsolation {
-	return &testIsolation{}
 }
 
 //#endregion Fakes
@@ -68,53 +64,51 @@ var _ = Describe("GardenerCustomMetrics", func() {
 		namespaceName = "test-namespace"
 	)
 	var (
-		ctx                = context.TODO()
-		seedClient         client.Client
-		fakeSecretsManager secretsmanager.Interface
-
 		//#region Helpers
-		newPma = func(isEnabled bool) (*GardenerCustomMetrics, *testIsolation) {
-			pma := NewGardenerCustomMetrics(namespaceName, imageName, isEnabled, seedClient, fakeSecretsManager)
-			ti := newTestIsolation()
+		newGcmx = func(isEnabled bool) (*GardenerCustomMetrics, client.Client, secretsmanager.Interface, *testBehaviorCapture) {
+			var seedClient client.Client = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
+			var fakeSecretsManager secretsmanager.Interface = fakesecretsmanager.New(seedClient, namespaceName)
+			gcmx := NewGardenerCustomMetrics(namespaceName, imageName, isEnabled, seedClient, fakeSecretsManager)
+			capture := &testBehaviorCapture{}
 			// We isolate the deployment workflow at the DeployResourceConfigs() level, because that point offers a
 			// convenient, declarative representation
-			pma.testIsolation.DeployResourceConfigs = ti.DeployResourceConfigs
+			gcmx.testIsolation.DeployResourceConfigs = capture.DeployResourceConfigs
 
-			return pma, ti
+			return gcmx, seedClient, fakeSecretsManager, capture
 		}
 
-		assertNoServerCertificateOnServer = func() {
+		assertServerCertificateOnServer = func(isExpectedToExist bool, seedClient client.Client) {
 			actualServerCertificateSecret := corev1.Secret{}
 			err := seedClient.Get(
-				ctx,
+				context.Background(),
 				client.ObjectKey{Namespace: namespaceName, Name: serverCertificateSecretName},
 				&actualServerCertificateSecret)
 
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			ExpectWithOffset(1, err.Error()).To(MatchRegexp(".*not.*found.*"))
+			if isExpectedToExist {
+				ExpectWithOffset(1, err).NotTo(HaveOccurred())
+			} else {
+				ExpectWithOffset(1, err).To(HaveOccurred())
+				ExpectWithOffset(1, err.Error()).To(MatchRegexp(".*not.*found.*"))
+			}
 		}
 
-		assertNoManagedResourceOnServer = func() {
+		assertNoManagedResourceOnServer = func(seedClient client.Client) {
 			mr := resourcesv1alpha1.ManagedResource{}
-			err := seedClient.Get(ctx, client.ObjectKey{Namespace: namespaceName, Name: managedResourceName}, &mr)
+			err := seedClient.Get(
+				context.Background(), client.ObjectKey{Namespace: namespaceName, Name: managedResourceName}, &mr)
 			ExpectWithOffset(1, err).To(HaveOccurred())
 			ExpectWithOffset(1, err.Error()).To(MatchRegexp(".*not.*found.*"))
 		}
 
-		createObjectOnSeed = func(obj client.Object, name string) {
+		createObjectOnSeed = func(obj client.Object, name string, seedClient client.Client) {
 			obj.SetNamespace(namespaceName)
 			obj.SetName(name)
-			ExpectWithOffset(1, seedClient.Create(ctx, obj)).To(Succeed())
+			ExpectWithOffset(1, seedClient.Create(context.Background(), obj)).To(Succeed())
 		}
 		//#endregion Helpers
 	)
 
-	BeforeEach(func() {
-		seedClient = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
-		fakeSecretsManager = fakesecretsmanager.New(seedClient, namespaceName)
-	})
-
-	Describe(".Deploy()", func() {
+	Describe("Deploy()", func() {
 		Context("in enabled state", func() {
 			It("should deploy the correct resources to the seed", func() {
 				//#region Expected resource config values as bulk JSON
@@ -383,6 +377,7 @@ var _ = Describe("GardenerCustomMetrics", func() {
 		]
 	}
 }`,
+					// TODO: Andrey: P1: Enable election, how do we decide on replica count?, remove debug flag, reduce verbosity
 					`
 {
 	"apiVersion": "apps/v1",
@@ -395,12 +390,12 @@ var _ = Describe("GardenerCustomMetrics", func() {
 		"namespace": "test-namespace"
 	},
 	"spec": {
-		"replicas": 1,
+		"replicas": 2,
 		"selector": {
 			"matchLabels": {
 				"app": "gardener-custom-metrics",
 				"gardener.cloud/role": "gardener-custom-metrics",
-				"resources.gardener.cloud/managed-by-xxx": "gardener"
+				"resources.gardener.cloud/managed-by": "gardener"
 			}
 		},
 		"template": {
@@ -411,8 +406,9 @@ var _ = Describe("GardenerCustomMetrics", func() {
 					"networking.gardener.cloud/from-seed": "allowed",
 					"networking.gardener.cloud/to-apiserver": "allowed",
 					"networking.gardener.cloud/to-dns": "allowed",
-					"networking.gardener.cloud/to-seed-apiserver": "allowed",
-					"networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443": "allowed"
+					"networking.gardener.cloud/to-runtime-apiserver": "allowed",
+					"networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443": "allowed",
+					"resources.gardener.cloud/managed-by": "gardener"
 				}
 			},
 			"spec": {
@@ -493,7 +489,6 @@ var _ = Describe("GardenerCustomMetrics", func() {
 						"type": "RuntimeDefault"
 					}
 				},
-				"serviceAccount": "gardener-custom-metrics",
 				"serviceAccountName": "gardener-custom-metrics",
 				"terminationGracePeriodSeconds": 30,
 				"volumes": [
@@ -568,10 +563,6 @@ var _ = Describe("GardenerCustomMetrics", func() {
 			}
 		],
 		"publishNotReadyAddresses": true,
-		"selector": {
-			"app": "gardener-custom-metrics",
-			"gardener.cloud/role": "gardener-custom-metrics"
-		},
 		"sessionAffinity": "None",
 		"type": "ClusterIP"
 	}
@@ -600,24 +591,24 @@ var _ = Describe("GardenerCustomMetrics", func() {
 				//#endregion Expected resource config values as bulk JSON
 
 				// Arrange
-				createObjectOnSeed(&corev1.Secret{}, caSecretName)
-				pma, ti := newPma(true)
+				gcmx, seedClient, _, capture := newGcmx(true)
+				createObjectOnSeed(&corev1.Secret{}, caSecretName, seedClient)
 
 				// Act
-				Expect(pma.Deploy(ctx)).To(Succeed())
+				Expect(gcmx.Deploy(context.Background())).To(Succeed())
 
 				// Assert
 				actualServerCertificateSecret := corev1.Secret{}
 				Expect(seedClient.Get(
-					ctx,
+					context.Background(),
 					client.ObjectKey{Namespace: namespaceName, Name: serverCertificateSecretName},
 					&actualServerCertificateSecret),
 				).To(Succeed())
 
-				Expect(ti.DeployedResourceConfigs).To(HaveLen(len(expectedResourceConfigsAsJson)))
+				Expect(capture.DeployedResourceConfigs).To(HaveLen(len(expectedResourceConfigsAsJson)))
 
 				for i := range expectedResourceConfigsAsJson {
-					actualJson, err := convertResourceConfigToJson(&ti.DeployedResourceConfigs[i])
+					actualJson, err := convertResourceConfigToJson(&capture.DeployedResourceConfigs[i])
 					Expect(err).To(Succeed())
 					message := fmt.Sprintf(
 						"The actual resource config JSON at position %d had unexpected value. Actual:\n%s\n"+
@@ -627,86 +618,112 @@ var _ = Describe("GardenerCustomMetrics", func() {
 						expectedResourceConfigsAsJson[i])
 					Expect(actualJson).To(Equal(expectedResourceConfigsAsJson[i]), message)
 				}
+
+				// Check if the TLS secret was created. The fake secret manager currently does not allow verifying that
+				// it was invoked with the expected parameters (even indirectly, as the created secret does not fully
+				// reflect the parameters given to the fake secret manager). So, at least check that the secret was
+				// created
+				assertServerCertificateOnServer(true, seedClient)
 			})
+
 			It("should fail if CA certificate is missing on the seed", func() {
 				// Arrange
-				pma, ti := newPma(true)
+				gcmx, _, _, capture := newGcmx(true)
 
 				// Act
-				err := pma.Deploy(ctx)
+				err := gcmx.Deploy(context.Background())
 
 				// Assert
 				Expect(err).To(HaveOccurred())
 				Expect(err.Error()).To(MatchRegexp(".*CA.*certificate.*secret.*"))
-				Expect(ti.DeployedResourceConfigs).To(BeNil())
+				Expect(capture.DeployedResourceConfigs).To(BeNil())
 			})
 		})
+
 		Context("in disabled state", func() {
 			It("should not fail if CA certificate is missing on the seed", func() {
 				// Arrange
+				gcmx, seedClient, _, _ := newGcmx(false)
 				actualServerCertificateSecret := corev1.Secret{}
 				err := seedClient.Get(
-					ctx,
+					context.Background(),
 					client.ObjectKey{Namespace: namespaceName, Name: caSecretName},
 					&actualServerCertificateSecret)
 				Expect(err.Error()).To(MatchRegexp(".*not.*found.*"))
 
-				pma, _ := newPma(false)
-
 				// Act
-				Expect(pma.Deploy(ctx)).To(Succeed())
+				err = gcmx.Deploy(context.Background())
 
 				// Assert
+				Expect(err).To(Succeed())
 			})
+
 			It("should not deploy any resources to the seed", func() {
 				// Arrange
-				pma, ti := newPma(false)
+				gcmx, seedClient, _, capture := newGcmx(false)
 
 				// Act
-				Expect(pma.Deploy(ctx)).To(Succeed())
+				Expect(gcmx.Deploy(context.Background())).To(Succeed())
 
 				// Assert
-				assertNoServerCertificateOnServer()
-				Expect(ti.DeployedResourceConfigs).To(BeNil())
+				Expect(capture.DeployedResourceConfigs).To(BeNil())
+				assertServerCertificateOnServer(false, seedClient)
+			})
+
+			It("should destroy the resources on the seed", func() {
+				// Arrange
+				gcmx, seedClient, _, capture := newGcmx(false)
+				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName, seedClient)
+				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
+
+				// Act
+				Expect(gcmx.Deploy(context.Background())).To(Succeed())
+
+				// Assert
+				assertNoManagedResourceOnServer(seedClient)
+				Expect(capture.DeployedResourceConfigs).To(BeNil())
 			})
 		})
 	})
-	Describe(".Destroy()", func() {
+
+	Describe("Destroy()", func() {
 		Context("in enabled state", func() {
 			It("should destroy the resources on the seed", func() {
 				// Arrange
-				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName)
-				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName)
-				pma, _ := newPma(true)
+				gcmx, seedClient, _, capture := newGcmx(true)
+				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName, seedClient)
+				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
 
 				// Act
-				Expect(pma.Destroy(ctx)).To(Succeed())
+				Expect(gcmx.Destroy(context.Background())).To(Succeed())
 
 				// Assert
-				assertNoManagedResourceOnServer()
+				assertNoManagedResourceOnServer(seedClient)
+				Expect(capture.DeployedResourceConfigs).To(BeNil())
 			})
+
 			It("should not fail if resources are missing on the seed", func() {
 				// Arrange
-				pma, _ := newPma(true)
+				gcmx, _, _, _ := newGcmx(true)
 
-				// Act
-				Expect(pma.Destroy(ctx)).To(Succeed())
-
-				// Assert
+				// Act and assert
+				Expect(gcmx.Destroy(context.Background())).To(Succeed())
 			})
 		})
+
 		Context("in disabled state", func() {
 			It("should destroy the resources on the seed", func() {
 				// Arrange
-				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName)
-				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName)
-				pma, _ := newPma(false)
+				gcmx, seedClient, _, capture := newGcmx(false)
+				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName, seedClient)
+				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
 
 				// Act
-				Expect(pma.Destroy(ctx)).To(Succeed())
+				Expect(gcmx.Destroy(context.Background())).To(Succeed())
 
 				// Assert
-				assertNoManagedResourceOnServer()
+				assertNoManagedResourceOnServer(seedClient)
+				Expect(capture.DeployedResourceConfigs).To(BeNil())
 			})
 		})
 	})
@@ -729,21 +746,21 @@ var _ = Describe("GardenerCustomMetrics", func() {
 			resetVars()
 		})
 
-		Describe(".Wait()", func() {
-			It("should fail because reading the ManagedResource fails", func() {
+		Describe("Wait()", func() {
+			It("should fail when the ManagedResource is missing", func() {
 				// Arrange
-				pma, _ := newPma(true)
+				gcmx, _, _, _ := newGcmx(true)
 
 				// Act
-				Expect(pma.Wait(ctx)).To(MatchError(ContainSubstring("not found")))
+				Expect(gcmx.Wait(context.Background())).To(MatchError(ContainSubstring("not found")))
 			})
 
 			It("should fail because the ManagedResource doesn't become healthy", func() {
 				// Arrange
-				pma, _ := newPma(true)
+				gcmx, seedClient, _, _ := newGcmx(true)
 				fakeOps.MaxAttempts = 2
 
-				Expect(seedClient.Create(ctx, &resourcesv1alpha1.ManagedResource{
+				Expect(seedClient.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       managedResourceName,
 						Namespace:  namespaceName,
@@ -764,16 +781,16 @@ var _ = Describe("GardenerCustomMetrics", func() {
 					},
 				})).To(Succeed())
 
-				// Act
-				Expect(pma.Wait(ctx)).To(MatchError(ContainSubstring("is not healthy")))
+				// Act and assert
+				Expect(gcmx.Wait(context.Background())).To(MatchError(ContainSubstring("is not healthy")))
 			})
 
 			It("should successfully wait for the managed resource to become healthy", func() {
 				// Arrange
-				pma, _ := newPma(true)
+				gcmx, seedClient, _, _ := newGcmx(true)
 				fakeOps.MaxAttempts = 2
 
-				Expect(seedClient.Create(ctx, &resourcesv1alpha1.ManagedResource{
+				Expect(seedClient.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       managedResourceName,
 						Namespace:  namespaceName,
@@ -795,26 +812,26 @@ var _ = Describe("GardenerCustomMetrics", func() {
 				})).To(Succeed())
 
 				// Act
-				Expect(pma.Wait(ctx)).To(Succeed())
+				Expect(gcmx.Wait(context.Background())).To(Succeed())
 			})
 		})
 
-		Describe(".WaitCleanup()", func() {
+		Describe("WaitCleanup()", func() {
 			It("should fail when the wait for the managed resource deletion times out", func() {
 				// Arrange
-				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName)
-				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName)
-				pma, _ := newPma(true)
+				gcmx, seedClient, _, _ := newGcmx(true)
+				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName, seedClient)
+				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
 				fakeOps.MaxAttempts = 2
 
 				// Act
-				Expect(pma.WaitCleanup(ctx)).To(MatchError(ContainSubstring("still exists")))
+				Expect(gcmx.WaitCleanup(context.Background())).To(MatchError(ContainSubstring("still exists")))
 			})
 
 			It("should not return an error when it's already removed", func() {
 				// Arrange
-				pma, _ := newPma(true)
-				Expect(pma.WaitCleanup(ctx)).To(Succeed())
+				gcmx, _, _, _ := newGcmx(true)
+				Expect(gcmx.WaitCleanup(context.Background())).To(Succeed())
 			})
 		})
 	})

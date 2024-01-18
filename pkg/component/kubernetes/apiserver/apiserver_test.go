@@ -114,6 +114,8 @@ var _ = Describe("KubeAPIServer", func() {
 		deployment                 *appsv1.Deployment
 		horizontalPodAutoscaler    *autoscalingv2.HorizontalPodAutoscaler
 		verticalPodAutoscaler      *vpaautoscalingv1.VerticalPodAutoscaler
+		bipaHpa                    *autoscalingv2.HorizontalPodAutoscaler  // The HPA which is part of the BilinearPodAutoscaler
+		bipaVpa                    *vpaautoscalingv1.VerticalPodAutoscaler // The VPA which is part of the BilinearPodAutoscaler
 		hvpa                       *hvpav1alpha1.Hvpa
 		podDisruptionBudget        *policyv1.PodDisruptionBudget
 		configMapAdmission         *corev1.ConfigMap
@@ -176,6 +178,18 @@ var _ = Describe("KubeAPIServer", func() {
 				Namespace: namespace,
 			},
 		}
+		bipaHpa = &autoscalingv2.HorizontalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver-bipa",
+				Namespace: namespace,
+			},
+		}
+		bipaVpa = &vpaautoscalingv1.VerticalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "kube-apiserver-bipa",
+				Namespace: namespace,
+			},
+		}
 		hvpa = &hvpav1alpha1.Hvpa{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "kube-apiserver",
@@ -220,17 +234,17 @@ var _ = Describe("KubeAPIServer", func() {
 					Expect(c.Get(ctx, client.ObjectKeyFromObject(horizontalPodAutoscaler), horizontalPodAutoscaler)).To(BeNotFoundError())
 				},
 
-				Entry("HVPA is enabled", apiserver.AutoscalingConfig{HVPAEnabled: true}),
-				Entry("replicas is nil", apiserver.AutoscalingConfig{HVPAEnabled: false, Replicas: nil}),
-				Entry("replicas is 0", apiserver.AutoscalingConfig{HVPAEnabled: false, Replicas: ptr.To[int32](0)}),
+				Entry("HVPA is enabled", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
+				Entry("replicas is nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing, Replicas: nil}),
+				Entry("replicas is 0", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing, Replicas: ptr.Int32(0)}),
 			)
 
 			BeforeEach(func() {
 				autoscalingConfig = apiserver.AutoscalingConfig{
-					HVPAEnabled: false,
-					Replicas:    ptr.To[int32](2),
-					MinReplicas: 4,
-					MaxReplicas: 6,
+					AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing,
+					Replicas:        ptr.Int32(2),
+					MinReplicas:     4,
+					MaxReplicas:     6,
 				}
 
 				runtimeVersion = semver.MustParse("1.25.0")
@@ -284,7 +298,7 @@ var _ = Describe("KubeAPIServer", func() {
 		Describe("VerticalPodAutoscaler", func() {
 			Context("HVPAEnabled = true", func() {
 				BeforeEach(func() {
-					autoscalingConfig = apiserver.AutoscalingConfig{HVPAEnabled: true}
+					autoscalingConfig = apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}
 				})
 
 				It("should delete the VPA resource", func() {
@@ -297,7 +311,7 @@ var _ = Describe("KubeAPIServer", func() {
 
 			Context("HVPAEnabled = false", func() {
 				BeforeEach(func() {
-					autoscalingConfig = apiserver.AutoscalingConfig{HVPAEnabled: false}
+					autoscalingConfig = apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}
 				})
 
 				It("should successfully deploy the VPA resource", func() {
@@ -348,9 +362,9 @@ var _ = Describe("KubeAPIServer", func() {
 					Expect(c.Get(ctx, client.ObjectKeyFromObject(hvpa), hvpa)).To(BeNotFoundError())
 				},
 
-				Entry("HVPA disabled", apiserver.AutoscalingConfig{HVPAEnabled: false}),
-				Entry("HVPA enabled but replicas nil", apiserver.AutoscalingConfig{HVPAEnabled: true}),
-				Entry("HVPA enabled but replicas zero", apiserver.AutoscalingConfig{HVPAEnabled: true, Replicas: ptr.To[int32](0)}),
+				Entry("HVPA disabled", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}),
+				Entry("HVPA enabled but replicas nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
+				Entry("HVPA enabled but replicas zero", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA, Replicas: ptr.To[int32](0)}),
 			)
 
 			var (
@@ -514,10 +528,10 @@ var _ = Describe("KubeAPIServer", func() {
 
 				Entry("default behaviour",
 					apiserver.AutoscalingConfig{
-						HVPAEnabled: true,
-						Replicas:    ptr.To[int32](2),
-						MinReplicas: 5,
-						MaxReplicas: 5,
+						AutoscalingMode: apiserver.AutoscalingModeHVPA,
+						Replicas:        ptr.To[int32](2),
+						MinReplicas:     5,
+						MaxReplicas:     5,
 					},
 					SNIConfig{},
 					defaultExpectedScaleDownUpdateMode,
@@ -527,7 +541,7 @@ var _ = Describe("KubeAPIServer", func() {
 				),
 				Entry("UseMemoryMetricForHvpaHPA is true",
 					apiserver.AutoscalingConfig{
-						HVPAEnabled:               true,
+						AutoscalingMode:           apiserver.AutoscalingModeHVPA,
 						Replicas:                  ptr.To[int32](2),
 						UseMemoryMetricForHvpaHPA: true,
 						MinReplicas:               5,
@@ -556,7 +570,7 @@ var _ = Describe("KubeAPIServer", func() {
 				),
 				Entry("scale down is disabled",
 					apiserver.AutoscalingConfig{
-						HVPAEnabled:              true,
+						AutoscalingMode:          apiserver.AutoscalingModeHVPA,
 						Replicas:                 ptr.To[int32](2),
 						MinReplicas:              5,
 						MaxReplicas:              5,
@@ -570,10 +584,10 @@ var _ = Describe("KubeAPIServer", func() {
 				),
 				Entry("max replicas > min replicas",
 					apiserver.AutoscalingConfig{
-						HVPAEnabled: true,
-						Replicas:    ptr.To[int32](2),
-						MinReplicas: 3,
-						MaxReplicas: 5,
+						AutoscalingMode: apiserver.AutoscalingModeHVPA,
+						Replicas:        ptr.To[int32](2),
+						MinReplicas:     3,
+						MaxReplicas:     5,
 					},
 					SNIConfig{},
 					defaultExpectedScaleDownUpdateMode,
@@ -592,6 +606,73 @@ var _ = Describe("KubeAPIServer", func() {
 						},
 					},
 				),
+			)
+		})
+
+		Describe("BilinearPodAutoscaler", func() {
+			DescribeTable("should delete bipa's HPA and VPA resources",
+				func(autoscalingConfig apiserver.AutoscalingConfig) {
+					kapi = New(kubernetesInterface, namespace, sm, Values{
+						Values: apiserver.Values{
+							Autoscaling:    autoscalingConfig,
+							RuntimeVersion: runtimeVersion,
+						},
+						Version: version,
+					})
+
+					for _, bipaAutoscalerElement := range []client.Object{bipaHpa, bipaVpa} {
+						Expect(c.Create(ctx, bipaAutoscalerElement)).To(Succeed())
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaAutoscalerElement), bipaAutoscalerElement)).
+							To(Succeed())
+						Expect(kapi.Deploy(ctx)).To(Succeed())
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaAutoscalerElement), bipaAutoscalerElement)).
+							To(MatchError(ContainSubstring("not found")))
+					}
+				},
+
+				Entry("In HVPA mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
+				Entry("In legacy mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}),
+			)
+
+			DescribeTable("should activate/deactivate, depending on the configured autoscaling mode",
+				func(autoscalingModeAsInt int, isEnabledExpected bool) {
+					var autoscalingMode = apiserver.AutoscalingMode(autoscalingModeAsInt)
+					// Arrange
+					kapi = New(kubernetesInterface, namespace, sm, Values{
+						Values: apiserver.Values{
+							Autoscaling: apiserver.AutoscalingConfig{
+								AutoscalingMode:          autoscalingMode,
+								Replicas:                 pointer.Int32(2),
+								MinReplicas:              5,
+								MaxReplicas:              5,
+								ScaleDownDisabledForHvpa: true,
+							},
+							RuntimeVersion: runtimeVersion,
+						},
+						Version: version,
+					})
+
+					Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).
+						To(MatchError(ContainSubstring("not found")))
+
+					// Act
+					Expect(kapi.Deploy(ctx)).To(Succeed())
+
+					// Assert
+
+					// Check just the presence of BIPA's HPA, as indicator of overall BIPA status. The detailed check
+					// of what gets deployed, is in the dedicated BIPA test
+					if isEnabledExpected {
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).To(Succeed())
+					} else {
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).
+							To(MatchError(ContainSubstring("not found")))
+					}
+				},
+
+				Entry("BIPA disabled in HVPA mode", apiserver.AutoscalingModeHVPA, false),
+				Entry("BIPA disabled in legacy mode", apiserver.AutoscalingModeHPlusVClashing, false),
+				Entry("BIPA enabled in BIPA mode", apiserver.AutoscalingModeBilinear, true),
 			)
 		})
 

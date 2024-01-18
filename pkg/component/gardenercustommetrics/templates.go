@@ -22,13 +22,74 @@ import (
 //
 //go:embed templates/*.yaml
 var resourceTemplateFiles embed.FS
-var resourceTemplates []*template.Template // resourceTemplateFiles loaded into Template objects
+var resourceManifests manifestReader
 
 func init() {
+	// Load the k8s resource templates
+	if err := resourceManifests.LoadTemplates(resourceTemplateFiles); err != nil {
+		panic(err)
+	}
+}
+
+// manifestReader creates a set of k8s resource objects by formatting a set of template files
+type manifestReader struct {
+	ResourceTemplates []*template.Template // resourceTemplateFiles loaded into Template objects
+}
+
+// LoadTemplates initialises a manifestReader instance by loading a set of text templates from the specified set of
+// embedded files. Upon success, the templates are available in the manifestReader.resourceTemplateFiles field.
+// LoadTemplates must be called exactly once per instance.
+func (mr *manifestReader) LoadTemplates(templateFiles embed.FS) error {
+	var err error
+	mr.ResourceTemplates, err = readTemplates(templateFiles)
+	return err
+}
+
+// Formats all GCMx resource manifest templates, based on the specified parameters, and returns them in the form of
+// reader objects
+func (mr *manifestReader) GetManifests(
+	namespaceName string,
+	containerImageName string,
+	serverCertificateSecret *corev1.Secret) ([]kubernetes.UnstructuredReader, error) {
+
+	templateParams := struct {
+		ContainerImageName string
+		DeploymentName     string
+		Namespace          string
+		ServerSecretName   string
+	}{
+		ContainerImageName: containerImageName,
+		DeploymentName:     deploymentName,
+		Namespace:          namespaceName,
+		ServerSecretName:   serverCertificateSecret.Name,
+	}
+
+	// Execute each manifest template and get object reader for the resulting raw output
+	var formattedManifests []kubernetes.UnstructuredReader
+	for i, template := range mr.ResourceTemplates {
+		var formattedManifest bytes.Buffer
+		if err := template.Execute(&formattedManifest, templateParams); err != nil {
+			return nil, fmt.Errorf(
+				"An error occurred while retrieving resource manifests for the GardenerCustomMetics component - "+
+					"executing the template at index %d failed. "+
+					"The error message reported by the underlying operation follows: %w",
+				i,
+				err)
+		}
+		formattedManifests = append(formattedManifests, kubernetes.NewManifestReader(formattedManifest.Bytes()))
+	}
+
+	return formattedManifests, nil
+}
+
+//#region Private implementation
+
+// readTemplates reads a set of text templates from the specified set of embedded files.
+func readTemplates(templateFiles embed.FS) ([]*template.Template, error) {
 	baseErrorMessage := "An error occurred while loading resource templates for the gardener-custom-metrics component"
 
-	// Load the k8s resource templates
-	fs.WalkDir(resourceTemplateFiles, ".", func(path string, dirEntry fs.DirEntry, err error) error {
+	var templates []*template.Template
+	err := fs.WalkDir(templateFiles, ".", func(path string, dirEntry fs.DirEntry, err error) error {
 		if err != nil {
 			return fmt.Errorf(baseErrorMessage+". The error message reported by the underlying operation follows: %w", err)
 		}
@@ -38,7 +99,7 @@ func init() {
 			return nil
 		}
 
-		bytes, err := resourceTemplateFiles.ReadFile(path)
+		bytes, err := templateFiles.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf(
 				baseErrorMessage+" - reading file '%s' failed. "+
@@ -59,46 +120,14 @@ func init() {
 				err)
 		}
 
-		resourceTemplates = append(resourceTemplates, template)
+		templates = append(templates, template)
 		return nil
 	})
-}
 
-// Formats all GCMx resource manifest templates, based on the specified parameters, and returns them in the form of
-// reader objects
-func getManifests(
-	namespaceName string,
-	containerImageName string,
-	serverCertificateSecret *corev1.Secret) ([]kubernetes.UnstructuredReader, error) {
-
-	templateParams := struct {
-		ContainerImageName string
-		DeploymentName     string
-		Namespace          string
-		ServerSecretName   string
-	}{
-		ContainerImageName: containerImageName,
-		DeploymentName:     deploymentName,
-		Namespace:          namespaceName,
-		ServerSecretName:   serverCertificateSecret.Name,
+	if err != nil {
+		return nil, err
 	}
-
-	// Execute each manifest template and get object reader for the resulting raw output
-	var formattedManifests []kubernetes.UnstructuredReader
-	for i, template := range resourceTemplates {
-		var formattedManifest bytes.Buffer
-		if err := template.Execute(&formattedManifest, templateParams); err != nil {
-			return nil, fmt.Errorf(
-				"An error occurred while retrieving resource manifests for the GardenerCustomMetics component - "+
-					"executing the template at index %d failed. "+
-					"The error message reported by the underlying operation follows: %w",
-				i,
-				err)
-		}
-		formattedManifests = append(formattedManifests, kubernetes.NewManifestReader(formattedManifest.Bytes()))
-	}
-
-	return formattedManifests, nil
+	return templates, nil
 }
 
 // Reads and returns all objects from the specified manifestReader
@@ -127,3 +156,5 @@ func readManifest(manifestReader kubernetes.UnstructuredReader) ([]client.Object
 
 	return objectsRead, allErrors.ErrorOrNil()
 }
+
+//#endregion Private implementation
