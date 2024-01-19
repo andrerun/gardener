@@ -3,10 +3,11 @@ kind: Deployment
 metadata:
   labels:
     app: gardener-custom-metrics
+    high-availability-config.resources.gardener.cloud/type: controller
   name: {{ .DeploymentName }}
   namespace: {{ .Namespace }}
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: gardener-custom-metrics
@@ -30,11 +31,10 @@ spec:
             - --secure-port=6443
             - --tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt
             - --tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key
-            - --leader-election=false
+            - --leader-election=true
             - --namespace=garden
             - --access-ip=$(POD_IP)
             - --access-port=6443
-            - --debug # TODO: Andrey: P1: Remove
             - --log-level=75 # TODO: Andrey: P1: Reduce. Also, do we need logtostderr=true?
           env:
             - name: POD_IP

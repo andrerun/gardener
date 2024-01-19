@@ -25,9 +25,9 @@ subjects:
     namespace: {{ .Namespace }}
 
 --- # Role: custom-metrics-editor
-# TODO: This role seems wrong:
+# TODO: Andrey: P1: This role seems wrong:
 # 1. GCMx does not need permissions to the custom metrics endpoint, because it does not access it directly
-# 2. This role should be a *-reader, not *-editor, and used for HPA. Furthermore, it should be deployed by the HVPA's installer, not by GCMx'
+# 2. This role should be a *-reader, not *-editor, and used for HPA.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -131,6 +131,40 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
   name: extension-apiserver-authentication-reader
+subjects:
+  - kind: ServiceAccount
+    name: gardener-custom-metrics
+    namespace: {{ .Namespace }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: gardener-custom-metrics-lease-editor
+  namespace: {{ .Namespace }}
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+      - deletecollection
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: gardener-custom-metrics--lease-editor
+  namespace: {{ .Namespace }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gardener-custom-metrics-lease-editor
 subjects:
   - kind: ServiceAccount
     name: gardener-custom-metrics
