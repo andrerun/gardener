@@ -19,6 +19,7 @@ import (
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	corev1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
@@ -26,8 +27,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
+	"github.com/gardener/gardener/pkg/client/kubernetes"
+	"github.com/gardener/gardener/pkg/component/gardenercustommetrics"
 	"github.com/gardener/gardener/pkg/controllerutils"
+	gardenerutils "github.com/gardener/gardener/pkg/utils/gardener"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	"github.com/gardener/gardener/pkg/utils/managedresources"
 )
 
 // DesiredStateParameters contains all configurable options of the BilinearPodAutoscaler's desired state
@@ -55,7 +61,9 @@ type BilinearPodAutoscaler struct {
 }
 
 // NewBilinearPodAutoscaler creates a local handle object, pointed at a server-side BilinearPodAutoscaler instance
-// of interest (either already existing, or desired). The resulting object can be used to manipulate the server-side setup.
+// of interest (either already existing, or desired). A BilinearPodAutoscaler lives in a shoot namespace, and that
+// namespace is specified by the namespaceName parameter. The resulting object can be used to manipulate the server-side
+// setup.
 func NewBilinearPodAutoscaler(namespaceName string, deploymentNameApiserver string) *BilinearPodAutoscaler {
 	return &BilinearPodAutoscaler{
 		namespaceName:           namespaceName,
@@ -70,6 +78,11 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, kubeCli
 		fmt.Sprintf("An error occurred while deleting BilinearPodAutoscaler '%s' in namespace '%s'",
 			bipa.deploymentNameApiserver,
 			bipa.namespaceName)
+
+	// TODO: Andrey: P1: better error
+	if err := managedresources.DeleteForShoot(ctx, kubeClient, bipa.namespaceName, gardenercustommetrics.ComponentName); err != nil {
+		return err
+	}
 
 	if err := client.IgnoreNotFound(kutil.DeleteObject(ctx, kubeClient, bipa.makeHPA())); err != nil {
 		return fmt.Errorf(baseErrorMessage+
@@ -123,7 +136,23 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 			"The error message reported by the underlying operation follows: %w",
 			err)
 	}
+	/*
+		// Create shoot access token for metrics scraping by gardener-custom-metrics
+		shootAccessSecret := bipa.makeShootAccessSecret()
+		if err := shootAccessSecret.Reconcile(ctx, kubeClient); err != nil {
+			return fmt.Errorf(baseErrorMessage+
+				" - failed to create the shoot access token secret '%s' on the server. "+
+				"That secret is needed by the gardener-custom-metrics component in order to scrape metrics from the "+
+				"shoot's kube-apiserver. "+
+				"The error message reported by the underlying operation follows: %w",
+				shootAccessSecret.Secret.Name,
+				err)
+		}
 
+		if err := bipa.reconcileAppResources(ctx, shootAccessSecret.ServiceAccountName, kubeClient); err != nil {
+			return err
+		}
+	*/
 	return nil
 }
 
@@ -258,6 +287,57 @@ func getVPAContainerResourcePolicies(containerNameApiserver string) []vpaautosca
 			ControlledValues: &controlledValuesRequestsOnlyAsLvalue,
 		},
 	}
+}
+
+func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gardenerutils.AccessSecret {
+	return gardenerutils.NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespaceName)
+}
+
+// reconcileAppResources reconciles the resources which belong inside the shoot cluster
+func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, serviceAccountName string, kubeClient client.Client) error {
+	var (
+		registry = managedresources.NewRegistry(kubernetes.ShootScheme, kubernetes.ShootCodec, kubernetes.ShootSerializer)
+
+		clusterRole = &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "gardener.cloud:monitoring:gardener-custom-metrics-target",
+			},
+			Rules: []rbacv1.PolicyRule{
+				{
+					NonResourceURLs: []string{"/metrics"},
+					Verbs:           []string{"get"},
+				},
+				{
+					NonResourceURLs: []string{"/delme"},
+					Verbs:           []string{"get"},
+				},
+			},
+		}
+		clusterRoleBinding = &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:        "gardener.cloud:monitoring:gardener-custom-metrics-target",
+				Annotations: map[string]string{resourcesv1alpha1.DeleteOnInvalidUpdate: "true"},
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: rbacv1.GroupName,
+				Kind:     "ClusterRole",
+				Name:     clusterRole.Name,
+			},
+			Subjects: []rbacv1.Subject{{
+				Kind:      rbacv1.ServiceAccountKind,
+				Name:      serviceAccountName,
+				Namespace: metav1.NamespaceSystem,
+			}},
+		}
+	)
+
+	data, err := registry.AddAllAndSerialize(clusterRole, clusterRoleBinding)
+	if err != nil {
+		return err
+	}
+
+	return managedresources.CreateForShoot(
+		ctx, kubeClient, bipa.namespaceName, gardenercustommetrics.ComponentName, managedresources.LabelValueGardener, false, data)
 }
 
 //#endregion Private implementation

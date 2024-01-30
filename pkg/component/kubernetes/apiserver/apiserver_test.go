@@ -234,7 +234,8 @@ var _ = Describe("KubeAPIServer", func() {
 					Expect(c.Get(ctx, client.ObjectKeyFromObject(horizontalPodAutoscaler), horizontalPodAutoscaler)).To(BeNotFoundError())
 				},
 
-				Entry("HVPA is enabled", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
+				Entry("Scaling mode is HVPA", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
+				Entry("Scaling mode is Bilinear", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBilinear}),
 				Entry("replicas is nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing, Replicas: nil}),
 				Entry("replicas is 0", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing, Replicas: ptr.Int32(0)}),
 			)
@@ -309,7 +310,7 @@ var _ = Describe("KubeAPIServer", func() {
 				})
 			})
 
-			Context("HVPAEnabled = false", func() {
+			Context("AutoscalingMode=HPlusVClashing", func() {
 				BeforeEach(func() {
 					autoscalingConfig = apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}
 				})
@@ -362,7 +363,8 @@ var _ = Describe("KubeAPIServer", func() {
 					Expect(c.Get(ctx, client.ObjectKeyFromObject(hvpa), hvpa)).To(BeNotFoundError())
 				},
 
-				Entry("HVPA disabled", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}),
+				Entry("In HPlusVClashing autoscaling mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}),
+				Entry("In Bilinear autoscaling mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBilinear}),
 				Entry("HVPA enabled but replicas nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
 				Entry("HVPA enabled but replicas zero", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA, Replicas: ptr.To[int32](0)}),
 			)
@@ -631,7 +633,7 @@ var _ = Describe("KubeAPIServer", func() {
 				},
 
 				Entry("In HVPA mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
-				Entry("In legacy mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}),
+				Entry("In HPlusVClashing mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHPlusVClashing}),
 			)
 
 			DescribeTable("should activate/deactivate, depending on the configured autoscaling mode",
@@ -671,7 +673,7 @@ var _ = Describe("KubeAPIServer", func() {
 				},
 
 				Entry("BIPA disabled in HVPA mode", apiserver.AutoscalingModeHVPA, false),
-				Entry("BIPA disabled in legacy mode", apiserver.AutoscalingModeHPlusVClashing, false),
+				Entry("BIPA disabled in HPlusVClashing mode", apiserver.AutoscalingModeHPlusVClashing, false),
 				Entry("BIPA enabled in BIPA mode", apiserver.AutoscalingModeBilinear, true),
 			)
 		})

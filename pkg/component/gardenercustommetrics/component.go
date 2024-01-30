@@ -177,6 +177,7 @@ func (gcmx *GardenerCustomMetrics) WaitCleanup(ctx context.Context) error {
 }
 
 const (
+	ComponentName               = componentBaseName
 	componentBaseName           = "gardener-custom-metrics"
 	deploymentName              = componentBaseName
 	managedResourceName         = componentBaseName // The implementing artifacts are deployed to the seed via this MR

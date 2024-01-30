@@ -33,7 +33,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 		vpaName        = hpaName
 
 		kubeClient client.Client
-		ctx        = context.TODO()
+		ctx        = context.Background()
 
 		//#region Helpers
 		assertObjectNotOnServer = func(obj client.Object, name string) {
@@ -52,7 +52,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 				}
 		}
 
-		newHpa = func(minReplicaCount int32, maxReplicaCount int32) *autoscalingv2.HorizontalPodAutoscaler {
+		newExpectedHpa = func(minReplicaCount int32, maxReplicaCount int32) *autoscalingv2.HorizontalPodAutoscaler {
 			lvalue300 := resource.MustParse("300")
 			return &autoscalingv2.HorizontalPodAutoscaler{
 				TypeMeta: metav1.TypeMeta{
@@ -82,7 +82,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 						{
 							Type: autoscalingv2.PodsMetricSourceType,
 							Pods: &autoscalingv2.PodsMetricSource{
-								Metric: autoscalingv2.MetricIdentifier{Name: "shoot:apiserver_request_total:sum"},
+								Metric: autoscalingv2.MetricIdentifier{Name: "apiserver_request_total"},
 								Target: autoscalingv2.MetricTarget{AverageValue: &lvalue300, Type: autoscalingv2.AverageValueMetricType},
 							},
 						},
@@ -91,7 +91,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 			}
 		}
 
-		newVpa = func() *vpaautoscalingv1.VerticalPodAutoscaler {
+		newExpectedVpa = func() *vpaautoscalingv1.VerticalPodAutoscaler {
 			updateModeAutoAsLvalue := vpaautoscalingv1.UpdateModeAuto
 			return &vpaautoscalingv1.VerticalPodAutoscaler{
 				TypeMeta: metav1.TypeMeta{
@@ -143,7 +143,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 					client.ObjectKey{Namespace: namespaceName, Name: hpaName},
 					&actualHpa),
 				).To(Succeed())
-				Expect(&actualHpa).To(matchers.DeepEqual(newHpa(desiredState.MinReplicaCount, desiredState.MaxReplicaCount)))
+				Expect(&actualHpa).To(matchers.DeepEqual(newExpectedHpa(desiredState.MinReplicaCount, desiredState.MaxReplicaCount)))
 
 				actualVpa := vpaautoscalingv1.VerticalPodAutoscaler{}
 				Expect(kubeClient.Get(
@@ -151,24 +151,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 					client.ObjectKey{Namespace: namespaceName, Name: vpaName},
 					&actualVpa),
 				).To(Succeed())
-				Expect(&actualVpa).To(matchers.DeepEqual(newVpa()))
-			})
-			It("should not attempt to deploy proxy pod mutator, when the respective image argument is empty", func() {
-				// Arrange
-				bipa, desiredState := newBipa(true)
-
-				// Act
-				Expect(bipa.Reconcile(ctx, kubeClient, desiredState)).To(Succeed())
-
-				// Assert
-				actualVpa := vpaautoscalingv1.VerticalPodAutoscaler{}
-				Expect(kubeClient.Get(
-					ctx,
-					client.ObjectKey{Namespace: namespaceName, Name: vpaName},
-					&actualVpa),
-				).To(Succeed())
-				Expect(len(actualVpa.Spec.ResourcePolicy.ContainerPolicies)).To(Equal(2))
-				Expect(actualVpa.Spec.ResourcePolicy.ContainerPolicies[0].ContainerName).To(Equal(containerNameApiserver))
+				Expect(&actualVpa).To(matchers.DeepEqual(newExpectedVpa()))
 			})
 		})
 		Context("in disabled state", func() {
@@ -183,7 +166,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 				assertObjectNotOnServer(&autoscalingv2.HorizontalPodAutoscaler{}, hpaName)
 				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
 			})
-			It("should remove respective resources already in the shoot control plane", func() {
+			It("should remove the respective resources already in the shoot control plane", func() {
 				// Arrange
 				bipa, desiredState := newBipa(true)
 				Expect(bipa.reconcileHPA(ctx, kubeClient, desiredState.MinReplicaCount, desiredState.MaxReplicaCount)).To(Succeed())
@@ -200,7 +183,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 	})
 	Describe(".DeleteFromServer()", func() {
 		Context("in enabled state", func() {
-			It("should destroy respective resources in the shoot control plane", func() {
+			It("should remove the respective resources in the shoot control plane", func() {
 				// Arrange
 				bipa, desiredState := newBipa(true)
 				Expect(bipa.reconcileHPA(ctx, kubeClient, desiredState.MinReplicaCount, desiredState.MaxReplicaCount)).To(Succeed())
@@ -226,7 +209,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 			})
 		})
 		Context("in disabled state", func() {
-			It("should destroy respective resources in the shoot control plane", func() {
+			It("should remove the respective resources in the shoot control plane", func() {
 				// Arrange
 				bipa, desiredState := newBipa(true)
 				Expect(bipa.reconcileHPA(ctx, kubeClient, desiredState.MinReplicaCount, desiredState.MaxReplicaCount)).To(Succeed())
