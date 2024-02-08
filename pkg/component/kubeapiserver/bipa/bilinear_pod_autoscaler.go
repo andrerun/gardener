@@ -79,9 +79,12 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, kubeCli
 			bipa.deploymentNameApiserver,
 			bipa.namespaceName)
 
-	// TODO: Andrey: P1: better error
 	if err := managedresources.DeleteForShoot(ctx, kubeClient, bipa.namespaceName, gardenercustommetrics.ComponentName); err != nil {
-		return err
+		return fmt.Errorf(baseErrorMessage+
+			" - failed to delete the ManagedResource '%s', which serves as envelope for delivering the resoures from "+
+			"seed to shoot. The error message reported by the underlying operation follows: %w",
+			gardenercustommetrics.ComponentName,
+			err)
 	}
 
 	if err := client.IgnoreNotFound(kutil.DeleteObject(ctx, kubeClient, bipa.makeHPA())); err != nil {
@@ -95,6 +98,16 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, kubeCli
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to delete the VPA which is part of the BilinearPodAutoscaler from the server. "+
 			"The error message reported by the underlying operation follows: %w",
+			err)
+	}
+
+	shootAccessSecret := bipa.makeShootAccessSecret()
+	if err := kutil.DeleteObjects(ctx, kubeClient, shootAccessSecret.Secret); err != nil {
+		return fmt.Errorf(baseErrorMessage+
+			" - failed to delete the secret '%s' from the server. The purpose of that secret is to provide shoot "+
+			"access to the gardener-custom-metrics component, which is deployed as part of the BilinearPodAutoscaler. "+
+			"The error message reported by the underlying operation follows: %w",
+			shootAccessSecret.Secret.Name,
 			err)
 	}
 
@@ -136,23 +149,23 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 			"The error message reported by the underlying operation follows: %w",
 			err)
 	}
-	/*
-		// Create shoot access token for metrics scraping by gardener-custom-metrics
-		shootAccessSecret := bipa.makeShootAccessSecret()
-		if err := shootAccessSecret.Reconcile(ctx, kubeClient); err != nil {
-			return fmt.Errorf(baseErrorMessage+
-				" - failed to create the shoot access token secret '%s' on the server. "+
-				"That secret is needed by the gardener-custom-metrics component in order to scrape metrics from the "+
-				"shoot's kube-apiserver. "+
-				"The error message reported by the underlying operation follows: %w",
-				shootAccessSecret.Secret.Name,
-				err)
-		}
 
-		if err := bipa.reconcileAppResources(ctx, shootAccessSecret.ServiceAccountName, kubeClient); err != nil {
-			return err
-		}
-	*/
+	// Create shoot access token for metrics scraping by gardener-custom-metrics
+	shootAccessSecret := bipa.makeShootAccessSecret()
+	if err := shootAccessSecret.Reconcile(ctx, kubeClient); err != nil {
+		return fmt.Errorf(baseErrorMessage+
+			" - failed to create the shoot access token secret '%s' on the server. "+
+			"That secret is needed by the gardener-custom-metrics component in order to scrape metrics from the "+
+			"shoot's kube-apiserver. "+
+			"The error message reported by the underlying operation follows: %w",
+			shootAccessSecret.Secret.Name,
+			err)
+	}
+
+	if err := bipa.reconcileAppResources(ctx, shootAccessSecret.ServiceAccountName, kubeClient); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -206,7 +219,7 @@ func (bipa *BilinearPodAutoscaler) reconcileHPA(
 			{
 				Type: autoscalingv2.PodsMetricSourceType,
 				Pods: &autoscalingv2.PodsMetricSource{
-					Metric: autoscalingv2.MetricIdentifier{Name: "apiserver_request_total"},
+					Metric: autoscalingv2.MetricIdentifier{Name: "shoot:apiserver_request_total:sum"},
 					Target: autoscalingv2.MetricTarget{AverageValue: &lvalue300, Type: autoscalingv2.AverageValueMetricType},
 				},
 			},
@@ -293,9 +306,14 @@ func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gardenerutils.Access
 	return gardenerutils.NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespaceName)
 }
 
-// reconcileAppResources reconciles the resources which belong inside the shoot cluster
+// reconcileAppResources reconciles those bipa resources. which belong inside the shoot cluster. This function does not
+// reconcile deletion.
 func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, serviceAccountName string, kubeClient client.Client) error {
 	var (
+		baseErrorMessage = fmt.Sprintf(
+			"An error occurred while applying the BilinearPodAutoscaler resources which belong inside shoot '%s'",
+			bipa.namespaceName)
+
 		registry = managedresources.NewRegistry(kubernetes.ShootScheme, kubernetes.ShootCodec, kubernetes.ShootSerializer)
 
 		clusterRole = &rbacv1.ClusterRole{
@@ -305,10 +323,6 @@ func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, se
 			Rules: []rbacv1.PolicyRule{
 				{
 					NonResourceURLs: []string{"/metrics"},
-					Verbs:           []string{"get"},
-				},
-				{
-					NonResourceURLs: []string{"/delme"},
 					Verbs:           []string{"get"},
 				},
 			},
@@ -333,11 +347,21 @@ func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, se
 
 	data, err := registry.AddAllAndSerialize(clusterRole, clusterRoleBinding)
 	if err != nil {
-		return err
+		return fmt.Errorf(baseErrorMessage+" - failed to serialize the resources via managed resource registry. "+
+			"The error message reported by the underlying operation follows: %w",
+			err)
 	}
 
-	return managedresources.CreateForShoot(
+	err = managedresources.CreateForShoot(
 		ctx, kubeClient, bipa.namespaceName, gardenercustommetrics.ComponentName, managedresources.LabelValueGardener, false, data)
+	if err != nil {
+		return fmt.Errorf(baseErrorMessage+" - failed to create the ManagedResource object which serves as "+
+			"envelope for delivering the resoures from seed to shoot. "+
+			"The error message reported by the underlying operation follows: %w",
+			err)
+	}
+
+	return nil
 }
 
 //#endregion Private implementation

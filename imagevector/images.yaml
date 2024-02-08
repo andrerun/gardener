@@ -620,7 +620,7 @@ images:
 - name: gardener-custom-metrics
   sourceRepository: github.com/gardener/gardener-custom-metrics
   repository: eu.gcr.io/gardener-project/gardener/gardener-custom-metrics
-  tag: "v0.10.9-dev"
+  tag: "v0.10.11-dev"
 
 # Horizontal cluster-proportional-autoscaler
 - name: cluster-proportional-autoscaler

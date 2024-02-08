@@ -82,7 +82,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 						{
 							Type: autoscalingv2.PodsMetricSourceType,
 							Pods: &autoscalingv2.PodsMetricSource{
-								Metric: autoscalingv2.MetricIdentifier{Name: "apiserver_request_total"},
+								Metric: autoscalingv2.MetricIdentifier{Name: "shoot:apiserver_request_total:sum"},
 								Target: autoscalingv2.MetricTarget{AverageValue: &lvalue300, Type: autoscalingv2.AverageValueMetricType},
 							},
 						},
