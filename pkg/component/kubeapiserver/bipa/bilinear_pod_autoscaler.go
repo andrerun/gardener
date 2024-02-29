@@ -143,7 +143,7 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 			err)
 	}
 
-	if err := bipa.reconcileVPA(ctx, kubeClient, parameters.ContainerNameApiserver); err != nil {
+	if err := bipa.reconcileVPA(ctx, kubeClient, parameters.ContainerNameApiserver, parameters.MinReplicaCount); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to reconcile the VPA which is part of the BilinearPodAutoscaler on the server. "+
 			"The error message reported by the underlying operation follows: %w",
@@ -246,7 +246,7 @@ func (bipa *BilinearPodAutoscaler) reconcileHPA(
 
 // Reconciles the VPA resource which is part of the BilinearPodAutoscaler
 func (bipa *BilinearPodAutoscaler) reconcileVPA(
-	ctx context.Context, kubeClient client.Client, containerNameApiserver string) error {
+	ctx context.Context, kubeClient client.Client, containerNameApiserver string, minReplicaCount int32) error {
 
 	vpa := bipa.makeVPA()
 	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, kubeClient, vpa, func() error {
@@ -258,7 +258,7 @@ func (bipa *BilinearPodAutoscaler) reconcileVPA(
 		}
 		updateModeAutoAsLvalue := vpaautoscalingv1.UpdateModeAuto
 		vpa.Spec.UpdatePolicy = &vpaautoscalingv1.PodUpdatePolicy{
-			MinReplicas: pointer.Int32(2),
+			MinReplicas: &minReplicaCount,
 			UpdateMode:  &updateModeAutoAsLvalue,
 		}
 		vpa.Spec.ResourcePolicy = &vpaautoscalingv1.PodResourcePolicy{

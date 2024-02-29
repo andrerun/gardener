@@ -2,53 +2,63 @@ package shoot
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	e2e "github.com/gardener/gardener/test/e2e/gardener"
+	astest "github.com/gardener/gardener/test/e2e/gardener/shoot/internal/autoscaling"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
-
-	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	shootextensionactuator "github.com/gardener/gardener/pkg/provider-local/controller/extension/shoot"
-	e2e "github.com/gardener/gardener/test/e2e/gardener"
 )
 
-var _ = Describe("Shoot Tests", Label("Shoot", "default"), func() {
+var _ = Describe("Shoot Tests - Autoscaling", Label("Shoot", "default"), func() {
 	test := func(shoot *gardencorev1beta1.Shoot) {
 		f := defaultShootCreationFramework()
-		metav1.SetMetaDataAnnotation(&shoot.ObjectMeta, shootextensionactuator.AnnotationTestForceDeleteShoot, "true")
+		// f.GardenerFramework.Config.ExistingShootName = "e2e-kapiscale" // TODO: Andrey: P1: remove
 		f.Shoot = shoot
 
-		It("Create shoot, autoscale up, then out, then in", Label("autoscale"), func() {
-			By("Create Shoot")
-			ctx, cancel := context.WithTimeout(parentCtx, 15*time.Minute)
+		It("Create shoot, autoscale up, then out, then in", Label("Shoot", "kapi-autoscaling"), func() {
+			ctx, cancel := context.WithTimeout(parentCtx, 120*time.Minute)
 			defer cancel()
+
+			By("creating shoot")
 			Expect(f.CreateShootAndWaitForCreation(ctx, false)).To(Succeed())
+			defer func() {
+				By("deleting shoot")
+				ctx, cancel = context.WithTimeout(parentCtx, 30*time.Minute)
+				defer cancel()
+				Expect(f.DeleteShootAndWaitForDeletion(ctx, f.Shoot)).To(Succeed())
+			}()
 			f.Verify()
 
-			By("Wait for Shoot to be force-deleted")
-			ctx, cancel = context.WithTimeout(parentCtx, 10*time.Minute)
-			defer cancel()
-			Expect(f.ForceDeleteShootAndWaitForDeletion(ctx, f.Shoot)).To(Succeed())
+			By("waiting for HPA and VPA to act on idle shoot kube-apiserver and shrink it to minimal size")
+			fmt.Println("# Wait to shrink ################################################################")
+			astest.WaitForIdleKapiState(ctx, f, 60*time.Minute)
 
-			By("Wait for Shoot to be force-deleted")
-			ctx, cancel = context.WithTimeout(parentCtx, 10*time.Minute)
-			defer cancel()
-			Expect(f.ForceDeleteShootAndWaitForDeletion(ctx, f.Shoot)).To(Succeed())
+			By("adding moderate kube-apiserver load to trigger only vertical scaling")
+			fmt.Println("# Load ################################################################")
+			loader := astest.NewKapiLoader(f.ShootFramework.ShootClient)
+			defer loader.SetLoad(0)
+			loader.SetLoad(270) // Stay under 300, which is the h-scaling threshold
+			fmt.Println("# Wait to scale up ################################################################")
+			astest.WaitForVerticallyInflatedKapiExpectSingleReplica(ctx, f, 50*time.Minute)
+
+			By("addingAdd major kube-apiserver load to trigger horizontal scaling")
+			fmt.Println("# Load more ################################################################")
+			loader.SetLoad(330)
+			fmt.Println("# Wait to scale out ################################################################")
+			astest.WaitForHorizontallyInflatedKapi(ctx, f, 4*time.Minute)
+			Expect(len(astest.GetShootKapiPods(ctx, f))).To(Equal(2))
+
+			By("removing all kube-apiserver load to allow HPA to scale back in")
+			loader.SetLoad(0)
+			fmt.Println("# Wait to shrink back ################################################################")
+			astest.WaitForHorizontallyDeflatedKapi(ctx, f, 20*time.Minute)
 		})
 	}
 
 	Context("Shoot", func() {
-		test(e2e.DefaultShoot("e2e-force-delete"))
-	})
-
-	Context("Hibernated Shoot", func() {
-		shoot := e2e.DefaultShoot("e2e-fd-hib")
-		shoot.Spec.Hibernation = &gardencorev1beta1.Hibernation{
-			Enabled: pointer.Bool(true),
-		}
-
-		test(shoot)
+		test(e2e.DefaultShoot("e2e-kapiscale"))
 	})
 })

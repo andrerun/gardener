@@ -18,6 +18,7 @@ import (
 	"flag"
 	"os"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -42,5 +43,10 @@ func TestE2E(t *testing.T) {
 		gardener.SetupDNSForMultiZoneTest()
 	}
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Test E2E Gardener Suite")
+
+	// Adjust the current ginkgo config
+	suiteConfig, reporterConfig := GinkgoConfiguration()
+	suiteConfig.Timeout = 120 * time.Minute // Autoscaling tests can take long
+	// Pass it to RunSpecs
+	RunSpecs(t, "Test E2E Gardener Suite", suiteConfig, reporterConfig)
 }

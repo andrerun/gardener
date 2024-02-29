@@ -30,8 +30,7 @@ images:
   repository: europe-docker.pkg.dev/gardener-project/releases/gardener/gardenlet
 - name: gardener-resource-manager
   sourceRepository: github.com/gardener/gardener
-  repository: eu.gcr.io/gardener-project/gardener/resource-manager
-  # repository: europe-docker.pkg.dev/gardener-project/releases/gardener/resource-manager
+  repository: europe-docker.pkg.dev/gardener-project/releases/gardener/resource-manager
   resourceId:
     name: resource-manager
 - name: gardener-node-agent
