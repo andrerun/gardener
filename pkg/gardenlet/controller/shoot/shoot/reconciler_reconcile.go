@@ -98,7 +98,7 @@ func (r *Reconciler) runReconcileShootFlow(ctx context.Context, o *operation.Ope
 	}
 
 	const (
-		defaultTimeout  = 60 * time.Second
+		defaultTimeout  = 30 * time.Second
 		defaultInterval = 5 * time.Second
 	)
 

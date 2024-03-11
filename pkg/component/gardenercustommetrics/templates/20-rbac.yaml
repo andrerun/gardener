@@ -2,7 +2,7 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: gardener-custom-metrics-endpoint-editor
+  name: gardener-custom-metrics--endpoint-editor
 rules:
   - apiGroups:
       - ""
@@ -18,44 +18,44 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: gardener-custom-metrics-endpoint-editor
+  name: gardener-custom-metrics--endpoint-editor
 subjects:
   - kind: ServiceAccount
     name: gardener-custom-metrics
     namespace: {{ .Namespace }}
 
---- # Role: custom-metrics-editor
+#--- # Role: custom-metrics-editor
 # TODO: Andrey: P1: This role seems wrong:
 # 1. GCMx does not need permissions to the custom metrics endpoint, because it does not access it directly
 # 2. This role should be a *-reader, not *-editor, and used for HPA.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: gardener-custom-metrics-custom-metrics-editor
-rules:
-  - apiGroups:
-      - custom.metrics.k8s.io
-    resources: ["*"]
-    verbs: ["*"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: gardener-custom-metrics--custom-metrics-editor
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gardener-custom-metrics-custom-metrics-editor
-subjects:
-  - kind: ServiceAccount
-    name: gardener-custom-metrics
-    namespace: {{ .Namespace }}
+#apiVersion: rbac.authorization.k8s.io/v1
+#kind: ClusterRole
+#metadata:
+#  name: gardener-custom-metrics--custom-metrics-editor
+#rules:
+#  - apiGroups:
+#      - custom.metrics.k8s.io
+#    resources: ["*"]
+#    verbs: ["*"]
+#---
+#apiVersion: rbac.authorization.k8s.io/v1
+#kind: ClusterRoleBinding
+#metadata:
+#  name: gardener-custom-metrics--custom-metrics-editor
+#roleRef:
+#  apiGroup: rbac.authorization.k8s.io
+#  kind: ClusterRole
+#  name: gardener-custom-metrics--custom-metrics-editor
+#subjects:
+#  - kind: ServiceAccount
+#    name: gardener-custom-metrics
+#    namespace: {{ .Namespace }}
 
 --- # Role: pod-reader
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: gardener-custom-metrics-pod-reader
+  name: gardener-custom-metrics--pod-reader
 rules:
   - apiGroups:
       - ""
@@ -73,7 +73,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: gardener-custom-metrics-pod-reader
+  name: gardener-custom-metrics--pod-reader
 subjects:
   - kind: ServiceAccount
     name: gardener-custom-metrics
@@ -83,7 +83,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: gardener-custom-metrics-secret-reader
+  name: gardener-custom-metrics--secret-reader
 rules:
   - apiGroups:
       - ""
@@ -102,7 +102,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: gardener-custom-metrics-secret-reader
+  name: gardener-custom-metrics--secret-reader
 subjects:
   - kind: ServiceAccount
     name: gardener-custom-metrics
@@ -139,7 +139,7 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: gardener-custom-metrics-lease-editor
+  name: gardener-custom-metrics--lease-editor
   namespace: {{ .Namespace }}
 rules:
   - apiGroups:
@@ -164,7 +164,7 @@ metadata:
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: gardener-custom-metrics-lease-editor
+  name: gardener-custom-metrics--lease-editor
 subjects:
   - kind: ServiceAccount
     name: gardener-custom-metrics

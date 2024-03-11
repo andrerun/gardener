@@ -9,6 +9,6 @@ spec:
     port: 443
   group: custom.metrics.k8s.io
   version: v1beta2
-  insecureSkipTLSVerify: true # TODO: Andrey: P1: Remove
+  insecureSkipTLSVerify: true
   groupPriorityMinimum: 100
   versionPriority: 200

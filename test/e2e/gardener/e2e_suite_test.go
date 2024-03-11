@@ -47,6 +47,7 @@ func TestE2E(t *testing.T) {
 	// Adjust the current ginkgo config
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	suiteConfig.Timeout = 120 * time.Minute // Autoscaling tests can take long
+	suiteConfig.LabelFilter = "Shoot && kapi-autoscaling"
 	// Pass it to RunSpecs
 	RunSpecs(t, "Test E2E Gardener Suite", suiteConfig, reporterConfig)
 }

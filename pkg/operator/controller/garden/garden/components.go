@@ -602,6 +602,13 @@ func defaultAPIServerAutoscalingConfig(garden *operatorv1alpha1.Garden) apiserve
 		minReplicas = 3
 	}
 
+	var autoscalingMode apiserver.AutoscalingMode
+	if hvpaEnabled() {
+		autoscalingMode = apiserver.AutoscalingModeHVPA
+	} else {
+		autoscalingMode = apiserver.AutoscalingModeHPlusVClashing
+	}
+
 	return apiserver.AutoscalingConfig{
 		APIServerResources: corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
@@ -609,7 +616,7 @@ func defaultAPIServerAutoscalingConfig(garden *operatorv1alpha1.Garden) apiserve
 				corev1.ResourceMemory: resource.MustParse("512Mi"),
 			},
 		},
-		HVPAEnabled:               hvpaEnabled(),
+		AutoscalingMode:           autoscalingMode,
 		MinReplicas:               minReplicas,
 		MaxReplicas:               6,
 		UseMemoryMetricForHvpaHPA: true,

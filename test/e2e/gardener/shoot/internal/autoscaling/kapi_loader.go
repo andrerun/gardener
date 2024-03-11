@@ -91,28 +91,3 @@ func loaderProc(clientSet kubernetesclientset.Interface, rpsChan <-chan int) {
 		}
 	}
 }
-
-// TODO: Andrey: P1: remove
-// const loaderPodScript = "while true; do curl --insecure -H \"Authorization: Bearer $(cat /var/run/secrets/kubernetes.io/serviceaccount/token)\" https://kubernetes.default.svc.cluster.local/version & sleep 0.05; done"
-// const loaderPodScript = "while true; do kubectl get namespace kube-system; sleep 0.05; done"
-// const loaderPodScript = "while true; do curl --insecure https://kubernetes.default.svc/version & sleep 0.05; done"
-//	return &v1.Deployment{
-//		ObjectMeta: metav1.ObjectMeta{Name: "kapi-loader", Namespace: "default"},
-//		Spec: v1.DeploymentSpec{
-//			Replicas: replicaCount,
-//			Selector: &loaderSelector,
-//			Template: corev1.PodTemplateSpec{
-//				ObjectMeta: metav1.ObjectMeta{Labels: loaderLabels},
-//				Spec: corev1.PodSpec{
-//					Containers: []corev1.Container{{
-//						Name:    loaderDeploymmentName,
-//						Image:   "nginx",
-//						Command: []string{"/bin/sh", "-c"},
-//						Args:    []string{loaderPodScript},
-//					}},
-//					AutomountServiceAccountToken: pointer.Bool(true),
-//				},
-//			},
-//		},
-//	}
-//}

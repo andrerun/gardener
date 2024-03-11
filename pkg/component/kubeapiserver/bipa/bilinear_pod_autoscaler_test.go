@@ -3,6 +3,7 @@ package bipa
 import (
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
@@ -91,6 +92,9 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 			}
 		}
 
+		scalingModeAutoAsLvalue              = vpaautoscalingv1.ContainerScalingModeAuto
+		controlledValuesRequestsOnlyAsLvalue = vpaautoscalingv1.ContainerControlledValuesRequestsOnly
+
 		newExpectedVpa = func() *vpaautoscalingv1.VerticalPodAutoscaler {
 			updateModeAutoAsLvalue := vpaautoscalingv1.UpdateModeAuto
 			return &vpaautoscalingv1.VerticalPodAutoscaler{
@@ -111,11 +115,24 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 						Name:       deploymentName,
 					},
 					UpdatePolicy: &vpaautoscalingv1.PodUpdatePolicy{
-						MinReplicas: pointer.Int32(2),
+						MinReplicas: pointer.Int32(1),
 						UpdateMode:  &updateModeAutoAsLvalue,
 					},
 					ResourcePolicy: &vpaautoscalingv1.PodResourcePolicy{
-						ContainerPolicies: getVPAContainerResourcePolicies(containerNameApiserver),
+						ContainerPolicies: []vpaautoscalingv1.ContainerResourcePolicy{
+							{
+								ContainerName: containerNameApiserver,
+								Mode:          &scalingModeAutoAsLvalue,
+								MinAllowed: corev1.ResourceList{
+									corev1.ResourceMemory: resource.MustParse("400M"),
+								},
+								MaxAllowed: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("8"),
+									corev1.ResourceMemory: resource.MustParse("25G"),
+								},
+								ControlledValues: &controlledValuesRequestsOnlyAsLvalue,
+							},
+						},
 					},
 				},
 			}

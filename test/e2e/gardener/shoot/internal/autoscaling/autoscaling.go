@@ -16,7 +16,8 @@ import (
 )
 
 var (
-	kapiCpuRequestMinAllowed = resource.MustParse("300m")
+	// When CPU scales to or below this level, we consider it scaled down to idle state
+	kapiIdleCpuLevel = resource.MustParse("300m")
 )
 
 // GetShootKapiPods returns the test shoot's kube-apiserver pods. Pods undergoing deletion are excluded from the result.
@@ -52,8 +53,8 @@ func WaitForIdleKapiState(ctx context.Context, fw *framework.ShootCreationFramew
 		// Wait for pod count in absence of load to reach its minimum
 		if len(pods) == 1 {
 			// Wait for unloaded kapi pod to be recommended minAllowed CPU
-			isCpuRecommendationAtMinAllowed := getShootKapiRecommendedCpu(ctx, fw).Cmp(kapiCpuRequestMinAllowed) == 0
-			if isCpuRecommendationAtMinAllowed {
+			isCpuRecommendationAtIdleLevel := getShootKapiRecommendedCpu(ctx, fw).Cmp(kapiIdleCpuLevel) <= 0
+			if isCpuRecommendationAtIdleLevel {
 				printEventTime("idle kapi state reached", startTime)
 				// Evict existing pod to force apply idle recommendation
 				err := clientSet.CoreV1().Pods(namespace).Delete(ctx, pods[0].Name, metav1.DeleteOptions{})
@@ -92,7 +93,7 @@ func WaitForVerticallyInflatedKapiExpectSingleReplica(
 		Expect(kapiContainer).NotTo(BeNil())
 		actualRequests := kapiContainer.Resources.Requests
 		Expect(actualRequests.Cpu()).NotTo(BeNil())
-		isCpuRequestIncreased := actualRequests.Cpu().Cmp(kapiCpuRequestMinAllowed) > 0
+		isCpuRequestIncreased := actualRequests.Cpu().Cmp(kapiIdleCpuLevel) > 0
 		if isCpuRequestIncreased {
 			printEventTime("kapi scaled up", startTime)
 			return
@@ -136,6 +137,8 @@ func WaitForHorizontallyDeflatedKapi(ctx context.Context, fw *framework.ShootCre
 	for time.Now().Sub(startTime) < timeout {
 		pods := GetShootKapiPods(ctx, fw)
 		if len(pods) == 1 {
+			// Expect HPA to respect stabilisation window
+			Expect(time.Now().Sub(startTime)).To(BeNumerically(">=", 15*time.Minute))
 			printEventTime("kapi scaled in", startTime)
 			return
 		}

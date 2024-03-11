@@ -13,7 +13,7 @@ import (
 
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
-	"github.com/gardener/gardener/pkg/component"
+	"github.com/gardener/gardener/pkg/component/gardenercustommetrics/kubeobjects"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
 	secretutils "github.com/gardener/gardener/pkg/utils/secrets"
@@ -61,8 +61,8 @@ func NewGardenerCustomMetrics(
 			kubernetes.SeedScheme, kubernetes.SeedCodec, kubernetes.SeedSerializer),
 
 		testIsolation: gardenerCustomMetricsTestIsolation{
-			DeployResourceConfigs:  component.DeployResourceConfigs,
-			DestroyResourceConfigs: component.DestroyResourceConfigs,
+			CreateForSeed: managedresources.CreateForSeed,
+			DeleteForSeed: managedresources.DeleteForSeed,
 		},
 	}
 }
@@ -92,24 +92,23 @@ func (gcmx *GardenerCustomMetrics) Deploy(ctx context.Context) error {
 			err)
 	}
 
-	resourceConfigs, err := getResourceConfigs(gcmx.namespaceName, gcmx.containerImageName, serverCertificateSecret)
+	kubeObjects, err := kubeobjects.GetKubeObjectsAsYamlBytes(
+		deploymentName, gcmx.namespaceName, gcmx.containerImageName, serverCertificateSecret.Name)
 	if err != nil {
 		return fmt.Errorf(baseErrorMessage+
-			" - failed to acquire the necessary resource config objects, which are to describe the individual "+
-			"elements which need to be deployed. "+
+			" - failed to create the K8s object definitions which describe the individual "+
+			"k8s objects comprising the application deployment arrangement. "+
 			"The error message reported by the underlying operation follows: %w",
 			err)
 	}
 
-	// TODO: Andrey: P1: Replace DeployResourceConfigs() with direct call to CreateForSeed()
-	err = gcmx.testIsolation.DeployResourceConfigs(
+	err = gcmx.testIsolation.CreateForSeed(
 		ctx,
 		gcmx.kubeClient,
 		gcmx.namespaceName,
-		component.ClusterTypeSeed,
 		managedResourceName,
-		gcmx.managedResourceRegistry,
-		resourceConfigs)
+		false,
+		kubeObjects)
 	if err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to deploy the necessary resource config objects as a ManagedResource named '%s' to the server. "+
@@ -123,9 +122,7 @@ func (gcmx *GardenerCustomMetrics) Deploy(ctx context.Context) error {
 
 // Destroy implements [component.Deployer.Destroy]()
 func (gcmx *GardenerCustomMetrics) Destroy(ctx context.Context) error {
-	if err := gcmx.testIsolation.DestroyResourceConfigs(
-		ctx, gcmx.kubeClient, gcmx.namespaceName, component.ClusterTypeSeed, managedResourceName); err != nil {
-
+	if err := gcmx.testIsolation.DeleteForSeed(ctx, gcmx.kubeClient, gcmx.namespaceName, managedResourceName); err != nil {
 		return fmt.Errorf(
 			"An error occurred while removing the gardener-custom-metrics component in namespace '%s' from the seed server"+
 				" - failed to remove ManagedResource '%s'. "+
@@ -189,13 +186,11 @@ const (
 // gardenerCustomMetricsTestIsolation contains all points of indirection necessary to isolate GardenerCustomMetrics'
 // dependencies on external static functions during tests.
 type gardenerCustomMetricsTestIsolation struct {
-	// Points to [component.DeployResourceConfigs]()
-	DeployResourceConfigs func(
-		context.Context, client.Client, string, component.ClusterType, string, *managedresources.Registry, component.ResourceConfigs) error
-
-	// Points to [component.DestroyResourceConfigs]()
-	DestroyResourceConfigs func(
-		context.Context, client.Client, string, component.ClusterType, string, ...component.ResourceConfigs) error
+	// Points to [managedresources.CreateForSeed]()
+	CreateForSeed func(
+		ctx context.Context, client client.Client, namespace, name string, keepObjects bool, data map[string][]byte) error
+	// Points to [managedresources.DeleteForSeed]()
+	DeleteForSeed func(ctx context.Context, client client.Client, namespace, name string) error
 }
 
 // Deploys the GCMx server TLS certificate to a secret and returns the name of the created secret
@@ -215,7 +210,7 @@ func (gcmx *GardenerCustomMetrics) deployServerCertificate(ctx context.Context) 
 		ctx,
 		&secretutils.CertificateSecretConfig{
 			Name:                        serverCertificateSecretName,
-			CommonName:                  fmt.Sprintf("%s.%s.svc", serviceName, gcmx.namespaceName), // TODO: Andrey: P1: componentBaseName?
+			CommonName:                  fmt.Sprintf("%s.%s.svc", serviceName, gcmx.namespaceName),
 			DNSNames:                    kutil.DNSNamesForService(serviceName, gcmx.namespaceName),
 			CertType:                    secretutils.ServerCert,
 			SkipPublishingCACertificate: true,
@@ -232,39 +227,4 @@ func (gcmx *GardenerCustomMetrics) deployServerCertificate(ctx context.Context) 
 	}
 
 	return serverCertificateSecret, nil
-}
-
-// Returns a list of the seed resources required to support GCMx's operation, in the form of [component.ResourceConfigs]
-func getResourceConfigs(
-	namespaceName string, containerImageName string, serverCertificateSecret *corev1.Secret) (component.ResourceConfigs, error) {
-
-	const baseErrorMessage = "An error occurred while retrieving the list of resource config objects which serves as " +
-		"blueprint for the gardener-custom-metrics component"
-
-	manifestReaders, err := resourceManifests.GetManifests(namespaceName, containerImageName, serverCertificateSecret)
-	if err != nil {
-		return nil, fmt.Errorf(baseErrorMessage+" - failed to retrieve resource manifest data. "+
-			"The error message reported by the underlying operation follows: %w",
-			err)
-	}
-
-	var allResources component.ResourceConfigs
-	for i, manifest := range manifestReaders {
-		manifestObjects, err := readManifest(manifest)
-		if err != nil {
-			msg := baseErrorMessage + " - failed to parse the manifest at index %d. " +
-				"The error message reported by the underlying operation follows: %w"
-			return nil, fmt.Errorf(msg, i, err)
-		}
-
-		for _, manifestObject := range manifestObjects {
-			resourceConfig := component.ResourceConfig{
-				Obj:   manifestObject,
-				Class: component.Runtime,
-			}
-			allResources = append(allResources, resourceConfig)
-		}
-	}
-
-	return allResources, nil
 }

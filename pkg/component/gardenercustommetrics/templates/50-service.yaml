@@ -13,7 +13,7 @@ spec:
       protocol: TCP
       targetPort: 6443
   publishNotReadyAddresses: true
-  sessionAffinity: None # TODO: Andrey: P1: What affinity do we want?
+  sessionAffinity: None
   type: ClusterIP
   # This service intentionally does not contain a pod selector. As a result, KCM does not perform any endpoint management.
   # Endpoint management is instead done by the gardener-custom-metrics leader instance, which ensures a single endpoint,

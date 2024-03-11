@@ -35,7 +35,7 @@ spec:
             - --namespace=garden
             - --access-ip=$(POD_IP)
             - --access-port=6443
-            - --log-level=75 # TODO: Andrey: P1: Reduce. Also, do we need logtostderr=true?
+            - --log-level=74
           env:
             - name: POD_IP
               valueFrom:
