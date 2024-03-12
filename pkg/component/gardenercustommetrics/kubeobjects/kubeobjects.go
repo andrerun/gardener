@@ -29,5 +29,6 @@ func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, se
 		makeService(namespace),
 		makeAPIService(namespace),
 		makePDB(namespace),
+		makeVPA(namespace),
 	)
 }

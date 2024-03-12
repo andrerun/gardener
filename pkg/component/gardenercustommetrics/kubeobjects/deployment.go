@@ -19,23 +19,22 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas: pointer.Int32(1),
+			Replicas:             pointer.Int32(1),
+			RevisionHistoryLimit: pointer.Int32(2),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app":                                 "gardener-custom-metrics",
-					"gardener.cloud/role":                 "gardener-custom-metrics",
-					"resources.gardener.cloud/managed-by": "gardener",
+					"app":                 "gardener-custom-metrics",
+					"gardener.cloud/role": "gardener-custom-metrics",
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":                                            "gardener-custom-metrics",
-						"gardener.cloud/role":                            "gardener-custom-metrics",
-						"resources.gardener.cloud/managed-by":            "gardener",
-						"networking.gardener.cloud/from-seed":            "allowed",
-						"networking.gardener.cloud/to-dns":               "allowed",
-						"networking.gardener.cloud/to-runtime-apiserver": "allowed",
+						"app":                                 "gardener-custom-metrics",
+						"gardener.cloud/role":                 "gardener-custom-metrics",
+						"networking.gardener.cloud/from-seed": "allowed",
+						"networking.gardener.cloud/to-dns":    "allowed",
+						"networking.gardener.cloud/to-runtime-apiserver":                           "allowed",
 						"networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443": "allowed",
 						"networking.gardener.cloud/to-apiserver":                                   "allowed",
 					},
@@ -110,8 +109,9 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							Name: "gardener-custom-metrics-image-pull-secret",
 						},
 					},
-					RestartPolicy: corev1.RestartPolicyAlways,
-					SchedulerName: "default-scheduler",
+					PriorityClassName: "priorityClassName: gardener-system-700",
+					RestartPolicy:     corev1.RestartPolicyAlways,
+					SchedulerName:     "default-scheduler",
 					SecurityContext: &corev1.PodSecurityContext{
 						SeccompProfile: &corev1.SeccompProfile{Type: "RuntimeDefault"},
 					},
