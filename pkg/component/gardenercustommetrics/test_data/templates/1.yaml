@@ -1,7 +1,0 @@
-kind: my-kind
-metadata:
-  name: my-name
-  containerImageName: {{ .ContainerImageName }},
-  deploymentName: {{ .DeploymentName }},
-  namespace: {{ .Namespace }}
-  serverSecretName: {{ .ServerSecretName }},

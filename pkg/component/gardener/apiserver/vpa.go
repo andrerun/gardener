@@ -26,7 +26,7 @@ import (
 )
 
 func (g *gardenerAPIServer) verticalPodAutoscaler() *vpaautoscalingv1.VerticalPodAutoscaler {
-	if g.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeHPlusVClashing {
+	if g.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeBaseline {
 		return nil
 	}
 

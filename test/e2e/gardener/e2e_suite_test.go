@@ -44,6 +44,7 @@ func TestE2E(t *testing.T) {
 	}
 	RegisterFailHandler(Fail)
 
+	// TODO: Andrey: P1: Remove BIPA e2e test from initial PR
 	// Adjust the current ginkgo config
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	suiteConfig.Timeout = 120 * time.Minute // Autoscaling tests can take long

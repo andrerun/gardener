@@ -33,7 +33,7 @@ func (k *kubeAPIServer) emptyVerticalPodAutoscaler() *vpaautoscalingv1.VerticalP
 }
 
 func (k *kubeAPIServer) reconcileVerticalPodAutoscaler(ctx context.Context, verticalPodAutoscaler *vpaautoscalingv1.VerticalPodAutoscaler, deployment *appsv1.Deployment) error {
-	if k.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeHPlusVClashing {
+	if k.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeBaseline {
 		return kubernetesutils.DeleteObject(ctx, k.client.Client(), verticalPodAutoscaler)
 	}
 

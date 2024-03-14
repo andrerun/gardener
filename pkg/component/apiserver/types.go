@@ -89,8 +89,12 @@ type AuditWebhook struct {
 type AutoscalingMode int8
 
 const (
-	AutoscalingModeBilinear       = 1 + iota // Simultaneous HPA on request rate and VPA on resource usage
-	AutoscalingModeHPlusVClashing            // Simultaneous HPA and VPA both on memory/CPU. Does not work well. Legacy.
+	// AutoscalingModeBaseline differs substantially between kube-apiserver and gardener-apiserver. For shoot
+	// kube-apiserver, it is: active HPA, plus VPA in passive, recommend-only mode
+	AutoscalingModeBaseline = 1 + iota
+	// AutoscalingModeBilinear uses simultaneous HPA on request rate and VPA on resource usage
+	AutoscalingModeBilinear
+	// AutoscalingModeHVPA uses Gardener's custom HVPA autoscaler
 	AutoscalingModeHVPA
 )
 

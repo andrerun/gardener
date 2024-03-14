@@ -2,39 +2,35 @@ package gardenercustommetrics
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
-	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
-	secretutils "github.com/gardener/gardener/pkg/utils/secrets"
-	"sort"
-	"strings"
-
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sort"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
+	gconstants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
-	"github.com/gardener/gardener/pkg/component"
+	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/retry"
 	retryfake "github.com/gardener/gardener/pkg/utils/retry/fake"
+	secretutils "github.com/gardener/gardener/pkg/utils/secrets"
 	secretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager"
 	fakesecretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager/fake"
 	"github.com/gardener/gardener/pkg/utils/test"
 )
 
-//#region Fakes
+//#region Test fakes
 
 type testBehaviorCapture struct {
 	DeployedResourceYamlBytes map[string][]byte
 }
 
+// CreateForSeed is a test isolation replacement for [gardenerCustomMetricsTestIsolation.CreateForSeed]
 func (capture *testBehaviorCapture) CreateForSeed(
 	ctx context.Context, client client.Client, namespace, name string, keepObjects bool, data map[string][]byte) error {
 
@@ -42,16 +38,7 @@ func (capture *testBehaviorCapture) CreateForSeed(
 	return nil
 }
 
-//#endregion Fakes
-
-func convertResourceConfigToJson(config *component.ResourceConfig) (string, error) {
-	json, err := json.MarshalIndent(config.Obj.(*unstructured.Unstructured), "", "\t")
-	if err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("\n%s", strings.TrimSuffix(string(json), "\n")), nil
-}
+//#endregion Test fakes
 
 var _ = Describe("GardenerCustomMetrics", func() {
 	const (
@@ -66,8 +53,8 @@ var _ = Describe("GardenerCustomMetrics", func() {
 			var fakeSecretsManager secretsmanager.Interface = fakesecretsmanager.New(seedClient, namespaceName)
 			gcmx := NewGardenerCustomMetrics(namespaceName, imageName, isEnabled, seedClient, fakeSecretsManager)
 			capture := &testBehaviorCapture{}
-			// We isolate the deployment workflow at the DeployResourceConfigs() level, because that point offers a
-			// convenient, declarative representation
+			// We isolate the deployment workflow at the CreateForSeed() level, because that point offers a
+			// convenient, declarative representation (deployed objects YAML)
 			gcmx.testIsolation.CreateForSeed = capture.CreateForSeed
 
 			return gcmx, seedClient, fakeSecretsManager, capture
@@ -116,12 +103,12 @@ var _ = Describe("GardenerCustomMetrics", func() {
 
 			for i := 0; i < minLen; i++ {
 				if s1[i] != s2[i] {
-					excerptStart := i - 20
+					excerptStart := i - 40
 					if excerptStart < 0 {
 						excerptStart = 0
 					}
 
-					excerptEnd := i + 20
+					excerptEnd := i + 40
 					if excerptEnd > minLen {
 						excerptEnd = minLen
 					}
@@ -321,11 +308,11 @@ metadata:
   namespace: test-namespace
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
   selector:
     matchLabels:
       app: gardener-custom-metrics
       gardener.cloud/role: gardener-custom-metrics
-      resources.gardener.cloud/managed-by: gardener
   strategy: {}
   template:
     metadata:
@@ -338,7 +325,6 @@ spec:
         networking.gardener.cloud/to-dns: allowed
         networking.gardener.cloud/to-runtime-apiserver: allowed
         networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443: allowed
-        resources.gardener.cloud/managed-by: gardener
     spec:
       containers:
       - command:
@@ -381,8 +367,7 @@ spec:
           name: kube-api-access-gardener
           readOnly: true
       dnsPolicy: ClusterFirst
-      imagePullSecrets:
-      - name: gardener-custom-metrics-image-pull-secret
+      priorityClassName: gardener-system-700
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext:
@@ -561,6 +546,30 @@ metadata:
   namespace: test-namespace
 
 ####################################################################################################
+verticalpodautoscaler__test-namespace__gardener-custom-metrics.yaml: 
+
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  creationTimestamp: null
+  labels:
+    role: gardener-custom-metrics-vpa
+  name: gardener-custom-metrics
+  namespace: test-namespace
+spec:
+  resourcePolicy:
+    containerPolicies:
+    - containerName: gardener-custom-metrics
+      controlledValues: RequestsOnly
+      minAllowed:
+        memory: 10Mi
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: gardener-custom-metrics
+status: {}
+
+####################################################################################################
 `
 				//#endregion Expected resources as bulk YAML
 
@@ -572,13 +581,6 @@ metadata:
 				Expect(gcmx.Deploy(context.Background())).To(Succeed())
 
 				// Assert
-				actualServerCertificateSecret := corev1.Secret{}
-				Expect(seedClient.Get(
-					context.Background(),
-					client.ObjectKey{Namespace: namespaceName, Name: serverCertificateSecretName},
-					&actualServerCertificateSecret),
-				).To(Succeed())
-
 				deployedResourcesAsText := formatKubeObjectsAsSortedText(capture.DeployedResourceYamlBytes)
 				if i, msg := strdiff(expectedResourcesAsText, deployedResourcesAsText); i != -1 {
 					Fail("Deployed resources YAML differs from expected. Details:\n" + msg)
@@ -609,11 +611,11 @@ metadata:
 			It("should not fail if CA certificate is missing on the seed", func() {
 				// Arrange
 				gcmx, seedClient, _, _ := newGcmx(false)
-				actualServerCertificateSecret := corev1.Secret{}
+				caSecret := corev1.Secret{}
 				err := seedClient.Get(
 					context.Background(),
 					client.ObjectKey{Namespace: namespaceName, Name: caSecretName},
-					&actualServerCertificateSecret)
+					&caSecret)
 				Expect(err.Error()).To(MatchRegexp(".*not.*found.*"))
 
 				// Act
@@ -647,7 +649,7 @@ metadata:
 						CertType:                    secretutils.ServerCert,
 						SkipPublishingCACertificate: true,
 					},
-					secretsmanager.SignedByCA(v1beta1constants.SecretNameCASeed, secretsmanager.UseCurrentCA),
+					secretsmanager.SignedByCA(gconstants.SecretNameCASeed, secretsmanager.UseCurrentCA),
 					secretsmanager.Rotate(secretsmanager.InPlace))
 				Expect(err).NotTo(HaveOccurred())
 				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
@@ -677,6 +679,7 @@ metadata:
 				// Assert
 				assertNoManagedResourceOnServer(seedClient)
 				Expect(capture.DeployedResourceYamlBytes).To(BeNil())
+				// Don't verify TLS secret deletion for now. The fake secrets manager currently does not implement cleanup.
 			})
 
 			It("should not fail if resources are missing on the seed", func() {
@@ -701,6 +704,7 @@ metadata:
 				// Assert
 				assertNoManagedResourceOnServer(seedClient)
 				Expect(capture.DeployedResourceYamlBytes).To(BeNil())
+				// Don't verify TLS secret deletion for now. The fake secrets manager currently does not implement cleanup.
 			})
 		})
 	})

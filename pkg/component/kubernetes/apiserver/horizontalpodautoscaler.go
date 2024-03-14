@@ -44,7 +44,7 @@ func (k *kubeAPIServer) emptyHorizontalPodAutoscaler() *autoscalingv2.Horizontal
 }
 
 func (k *kubeAPIServer) reconcileHorizontalPodAutoscaler(ctx context.Context, hpa *autoscalingv2.HorizontalPodAutoscaler, deployment *appsv1.Deployment) error {
-	if k.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeHPlusVClashing ||
+	if k.values.Autoscaling.AutoscalingMode != apiserver.AutoscalingModeBaseline ||
 		k.values.Autoscaling.Replicas == nil ||
 		*k.values.Autoscaling.Replicas == 0 {
 		return kubernetesutils.DeleteObject(ctx, k.client.Client(), hpa)

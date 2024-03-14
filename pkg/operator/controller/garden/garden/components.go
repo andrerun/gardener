@@ -606,7 +606,7 @@ func defaultAPIServerAutoscalingConfig(garden *operatorv1alpha1.Garden) apiserve
 	if hvpaEnabled() {
 		autoscalingMode = apiserver.AutoscalingModeHVPA
 	} else {
-		autoscalingMode = apiserver.AutoscalingModeHPlusVClashing
+		autoscalingMode = apiserver.AutoscalingModeBaseline
 	}
 
 	return apiserver.AutoscalingConfig{

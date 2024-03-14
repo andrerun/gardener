@@ -1,4 +1,0 @@
-kind: my-kind
-metadata:
-  name: my-name-2
-  namespace: {{ .Namespace }}

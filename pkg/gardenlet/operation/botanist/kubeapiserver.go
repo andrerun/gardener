@@ -119,7 +119,7 @@ func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.Autoscaling
 		nodeCount = b.Shoot.GetMaxNodeCount()
 	}
 
-	if autoscalingMode != apiserver.AutoscalingModeHPlusVClashing {
+	if autoscalingMode != apiserver.AutoscalingModeBaseline {
 		apiServerResources = corev1.ResourceRequirements{
 			Requests: corev1.ResourceList{
 				corev1.ResourceCPU:    resource.MustParse("500m"),
@@ -137,7 +137,7 @@ func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.Autoscaling
 			minReplicas = *b.ManagedSeedAPIServer.Autoscaler.MinReplicas
 			maxReplicas = b.ManagedSeedAPIServer.Autoscaler.MaxReplicas
 
-			if autoscalingMode == apiserver.AutoscalingModeHPlusVClashing {
+			if autoscalingMode == apiserver.AutoscalingModeBaseline {
 				defaultReplicas = b.ManagedSeedAPIServer.Replicas
 				apiServerResources = corev1.ResourceRequirements{
 					Requests: corev1.ResourceList{
@@ -176,7 +176,7 @@ func (b *Botanist) getAutoscalingMode() apiserver.AutoscalingMode {
 	if isHvpaRequested {
 		return apiserver.AutoscalingModeHVPA
 	}
-	return apiserver.AutoscalingModeHPlusVClashing
+	return apiserver.AutoscalingModeBaseline
 }
 
 func resourcesRequirementsForKubeAPIServer(nodeCount int32) corev1.ResourceRequirements {

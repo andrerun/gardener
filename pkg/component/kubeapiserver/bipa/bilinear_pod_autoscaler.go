@@ -26,12 +26,12 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
-	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
+	gconstants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	gresources "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/component/gardenercustommetrics"
 	"github.com/gardener/gardener/pkg/controllerutils"
-	gardenerutils "github.com/gardener/gardener/pkg/utils/gardener"
+	gutil "github.com/gardener/gardener/pkg/utils/gardener"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
 )
@@ -40,8 +40,8 @@ import (
 type DesiredStateParameters struct {
 	// The name of the kube-apiserver container inside the kube-apiserver pod
 	ContainerNameApiserver string
-	// If true, reconciliation will strive for a working deployment on server. If false, reconciliation will remove
-	// all elements of any existing deployment on the server.
+	// If true, reconciliation will strive for a working deployment on the server. If false, reconciliation will remove
+	// any elements of a previously existing deployment on the server.
 	IsEnabled bool
 	// MinReplicaCount and MaxReplicaCount control the horizontal scaling range
 	MaxReplicaCount int32
@@ -49,8 +49,8 @@ type DesiredStateParameters struct {
 	MinReplicaCount int32
 }
 
-// BilinearPodAutoscaler implements an autoscaling setup for kube-apiserver comprising an independently driven horizontal and
-// vertical pod autoscalers. For further overview of the autoscaling behavior, see package bipa.
+// BilinearPodAutoscaler implements an autoscaling setup for kube-apiserver comprising an independently driven horizontal
+// and vertical pod autoscalers. For further overview of the autoscaling behavior, see package bipa.
 //
 // The underlying implementation is an arrangement of k8s resources deployed as part of the target shoot's control plane.
 // A BilinearPodAutoscaler object itself is stateless. As far as state is concerned, it is nothing more than a handle,
@@ -71,7 +71,7 @@ func NewBilinearPodAutoscaler(namespace string, deploymentNameApiserver string) 
 }
 
 // DeleteFromServer removes all BilinearPodAutoscaler artefacts from the shoot control plane.
-// The kubeClient parameter specifies a connection to the server hosting said control plane.
+// The seedClient parameter specifies a connection to the server hosting said control plane.
 func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedClient client.Client) error {
 	baseErrorMessage :=
 		fmt.Sprintf("An error occurred while deleting BilinearPodAutoscaler '%s' in namespace '%s'",
@@ -115,10 +115,10 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 
 // Reconcile brings the server-side BilinearPodAutoscaler setup in compliance with the desired state specified by the
 // operation's parameters.
-// The kubeClient parameter specifies a connection to the server hosting said control plane.
+// The seedClient parameter specifies a connection to the server hosting said control plane.
 // The 'parameters' parameter specifies the desired state that is to be applied upon the server-side autoscaler setup.
 func (bipa *BilinearPodAutoscaler) Reconcile(
-	ctx context.Context, kubeClient client.Client, parameters *DesiredStateParameters) error {
+	ctx context.Context, seedClient client.Client, parameters *DesiredStateParameters) error {
 
 	baseErrorMessage :=
 		fmt.Sprintf("An error occurred while reconciling BilinearPodAutoscaler '%s' in namespace '%s'",
@@ -126,7 +126,7 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 			bipa.namespace)
 
 	if !parameters.IsEnabled {
-		if err := bipa.DeleteFromServer(ctx, kubeClient); err != nil {
+		if err := bipa.DeleteFromServer(ctx, seedClient); err != nil {
 			return fmt.Errorf(baseErrorMessage+
 				" - failed to bring the BilinearPodAutoscaler on the server to a fully disabled state. "+
 				"The error message reported by the underlying operation follows: %w",
@@ -135,14 +135,14 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 		return nil
 	}
 
-	if err := bipa.reconcileHPA(ctx, kubeClient, parameters.MinReplicaCount, parameters.MaxReplicaCount); err != nil {
+	if err := bipa.reconcileHPA(ctx, seedClient, parameters.MinReplicaCount, parameters.MaxReplicaCount); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to reconcile the HPA which is part of the BilinearPodAutoscaler on the server. "+
 			"The error message reported by the underlying operation follows: %w",
 			err)
 	}
 
-	if err := bipa.reconcileVPA(ctx, kubeClient, parameters.ContainerNameApiserver, parameters.MinReplicaCount); err != nil {
+	if err := bipa.reconcileVPA(ctx, seedClient, parameters.ContainerNameApiserver, parameters.MinReplicaCount); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to reconcile the VPA which is part of the BilinearPodAutoscaler on the server. "+
 			"The error message reported by the underlying operation follows: %w",
@@ -151,7 +151,7 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 
 	// Create shoot access token for metrics scraping by gardener-custom-metrics
 	shootAccessSecret := bipa.makeShootAccessSecret()
-	if err := shootAccessSecret.Reconcile(ctx, kubeClient); err != nil {
+	if err := shootAccessSecret.Reconcile(ctx, seedClient); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to create the shoot access token secret '%s' on the server. "+
 			"That secret is needed by the gardener-custom-metrics component in order to scrape metrics from the "+
@@ -161,7 +161,7 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 			err)
 	}
 
-	if err := bipa.reconcileAppResources(ctx, shootAccessSecret.ServiceAccountName, kubeClient); err != nil {
+	if err := bipa.reconcileAppResources(ctx, shootAccessSecret.ServiceAccountName, seedClient); err != nil {
 		return err
 	}
 
@@ -197,10 +197,10 @@ func (bipa *BilinearPodAutoscaler) makeEmptyVPA() *vpaautoscalingv1.VerticalPodA
 // Reconciles the HPA resource which is part of the BilinearPodAutoscaler.
 // minReplicaCount and maxReplicaCount control the horizontal scaling range.
 func (bipa *BilinearPodAutoscaler) reconcileHPA(
-	ctx context.Context, kubeClient client.Client, minReplicaCount int32, maxReplicaCount int32) error {
+	ctx context.Context, seedClient client.Client, minReplicaCount int32, maxReplicaCount int32) error {
 
 	hpa := bipa.makeEmptyHPA()
-	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, kubeClient, hpa, func() error {
+	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, seedClient, hpa, func() error {
 		hpa.Spec.ScaleTargetRef = autoscalingv2.CrossVersionObjectReference{
 			APIVersion: appsv1.SchemeGroupVersion.String(),
 			Kind:       "Deployment",
@@ -226,7 +226,7 @@ func (bipa *BilinearPodAutoscaler) reconcileHPA(
 		hpa.Spec.Metrics = hpaMetrics
 		hpa.Spec.MinReplicas = &minReplicaCount
 		hpa.Spec.MaxReplicas = maxReplicaCount
-		hpa.ObjectMeta.Labels = map[string]string{v1beta1constants.LabelRole: v1beta1constants.LabelAPIServer + "-hpa"}
+		hpa.ObjectMeta.Labels = map[string]string{gconstants.LabelRole: gconstants.LabelAPIServer + "-hpa"}
 
 		return nil
 	})
@@ -245,10 +245,10 @@ func (bipa *BilinearPodAutoscaler) reconcileHPA(
 
 // Reconciles the VPA resource which is part of the BilinearPodAutoscaler
 func (bipa *BilinearPodAutoscaler) reconcileVPA(
-	ctx context.Context, kubeClient client.Client, containerNameApiserver string, minReplicaCount int32) error {
+	ctx context.Context, seedClient client.Client, containerNameApiserver string, minReplicaCount int32) error {
 
 	vpa := bipa.makeEmptyVPA()
-	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, kubeClient, vpa, func() error {
+	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, seedClient, vpa, func() error {
 		vpa.Spec.Recommenders = nil
 		vpa.Spec.TargetRef = &autoscalingv1.CrossVersionObjectReference{
 			APIVersion: appsv1.SchemeGroupVersion.String(),
@@ -263,7 +263,7 @@ func (bipa *BilinearPodAutoscaler) reconcileVPA(
 		vpa.Spec.ResourcePolicy = &vpaautoscalingv1.PodResourcePolicy{
 			ContainerPolicies: makeDefaultVPAResourcePolicies(containerNameApiserver),
 		}
-		vpa.ObjectMeta.Labels = map[string]string{v1beta1constants.LabelRole: v1beta1constants.LabelAPIServer + "-vpa"}
+		vpa.ObjectMeta.Labels = map[string]string{gconstants.LabelRole: gconstants.LabelAPIServer + "-vpa"}
 
 		return nil
 	})
@@ -303,13 +303,13 @@ func makeDefaultVPAResourcePolicies(containerNameApiserver string) []vpaautoscal
 
 // Creates an empty shoot access secret. The name of the resulting object is a fixed function of the input parameters,
 // so two instances created with the same parameters point to the same server side object.
-func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gardenerutils.AccessSecret {
-	return gardenerutils.NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespace)
+func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gutil.AccessSecret {
+	return gutil.NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespace)
 }
 
 // reconcileAppResources reconciles those bipa resources which belong inside the shoot cluster. This function does not
 // reconcile deletion.
-func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, serviceAccountName string, kubeClient client.Client) error {
+func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, serviceAccountName string, seedClient client.Client) error {
 	var (
 		baseErrorMessage = fmt.Sprintf(
 			"An error occurred while applying the BilinearPodAutoscaler resources which belong inside shoot '%s'",
@@ -330,7 +330,7 @@ func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, se
 		clusterRoleBinding = &rbacv1.ClusterRoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        "gardener.cloud:monitoring:gardener-custom-metrics-target",
-				Annotations: map[string]string{resourcesv1alpha1.DeleteOnInvalidUpdate: "true"},
+				Annotations: map[string]string{gresources.DeleteOnInvalidUpdate: "true"},
 			},
 			RoleRef: rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,
@@ -352,8 +352,10 @@ func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, se
 			err)
 	}
 
+	// The shoot app resources we deploy are used only by gardener-custom-metrics. Thus, we package them in a
+	// managed resource named after gardener-custom-metrics instead of bipa itself.
 	err = managedresources.CreateForShoot(
-		ctx, kubeClient, bipa.namespace, gardenercustommetrics.ComponentName, managedresources.LabelValueGardener, false, data)
+		ctx, seedClient, bipa.namespace, gardenercustommetrics.ComponentName, managedresources.LabelValueGardener, false, data)
 	if err != nil {
 		return fmt.Errorf(baseErrorMessage+" - failed to create the ManagedResource object which serves as "+
 			"envelope for delivering the resoures from seed to shoot. "+

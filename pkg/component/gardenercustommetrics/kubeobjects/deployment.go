@@ -103,13 +103,8 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							},
 						},
 					},
-					DNSPolicy: corev1.DNSClusterFirst,
-					ImagePullSecrets: []corev1.LocalObjectReference{
-						{
-							Name: "gardener-custom-metrics-image-pull-secret",
-						},
-					},
-					PriorityClassName: "priorityClassName: gardener-system-700",
+					DNSPolicy:         corev1.DNSClusterFirst,
+					PriorityClassName: "gardener-system-700",
 					RestartPolicy:     corev1.RestartPolicyAlways,
 					SchedulerName:     "default-scheduler",
 					SecurityContext: &corev1.PodSecurityContext{
