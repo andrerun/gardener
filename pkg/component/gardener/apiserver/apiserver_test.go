@@ -1449,7 +1449,7 @@ kubeConfigFile: /etc/kubernetes/admission-kubeconfigs/validatingadmissionwebhook
 
 				Context("when HVPA is disabled", func() {
 					BeforeEach(func() {
-						values.Values.Autoscaling.HVPAEnabled = false
+						values.Values.Autoscaling.AutoscalingMode = apiserver.AutoscalingModeBaseline
 						deployer = New(fakeClient, namespace, fakeSecretManager, values)
 					})
 
@@ -1467,7 +1467,7 @@ kubeConfigFile: /etc/kubernetes/admission-kubeconfigs/validatingadmissionwebhook
 
 				Context("when HVPA is enabled", func() {
 					BeforeEach(func() {
-						values.Values.Autoscaling.HVPAEnabled = true
+						values.Values.Autoscaling.AutoscalingMode = apiserver.AutoscalingModeHVPA
 						deployer = New(fakeClient, namespace, fakeSecretManager, values)
 					})
 

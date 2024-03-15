@@ -1009,7 +1009,7 @@ exemptions:
 						},
 					})).To(Succeed())
 				},
-				apiserver.AutoscalingConfig{HVPAEnabled: false},
+				apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline},
 				nil,
 			),
 			Entry("set the existing requirements because deployment found and HVPA enabled",
@@ -1031,7 +1031,7 @@ exemptions:
 						},
 					})).To(Succeed())
 				},
-				apiserver.AutoscalingConfig{HVPAEnabled: true},
+				apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA},
 				&apiServerResources,
 			),
 		)

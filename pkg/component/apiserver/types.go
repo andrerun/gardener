@@ -91,7 +91,7 @@ type AutoscalingMode int8
 const (
 	// AutoscalingModeBaseline differs substantially between kube-apiserver and gardener-apiserver. For shoot
 	// kube-apiserver, it is: active HPA, plus VPA in passive, recommend-only mode
-	AutoscalingModeBaseline = 1 + iota
+	AutoscalingModeBaseline = 0 + iota
 	// AutoscalingModeBilinear uses simultaneous HPA on request rate and VPA on resource usage
 	AutoscalingModeBilinear
 	// AutoscalingModeHVPA uses Gardener's custom HVPA autoscaler
