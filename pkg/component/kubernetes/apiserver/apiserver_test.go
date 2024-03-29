@@ -17,6 +17,7 @@ package apiserver_test
 import (
 	"context"
 	"fmt"
+	"k8s.io/utils/pointer"
 	"strconv"
 	"strings"
 	"time"
@@ -237,13 +238,13 @@ var _ = Describe("KubeAPIServer", func() {
 				Entry("Scaling mode is HVPA", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
 				Entry("Scaling mode is Bilinear", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBilinear}),
 				Entry("replicas is nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: nil}),
-				Entry("replicas is 0", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: ptr.Int32(0)}),
+				Entry("replicas is 0", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: pointer.Int32(0)}),
 			)
 
 			BeforeEach(func() {
 				autoscalingConfig = apiserver.AutoscalingConfig{
 					AutoscalingMode: apiserver.AutoscalingModeBaseline,
-					Replicas:        ptr.Int32(2),
+					Replicas:        pointer.Int32(2),
 					MinReplicas:     4,
 					MaxReplicas:     6,
 				}

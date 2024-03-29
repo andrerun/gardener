@@ -107,6 +107,7 @@ type components struct {
 	nginxIngressController   component.DeployWaiter
 	verticalPodAutoscaler    component.DeployWaiter
 	hvpaController           component.DeployWaiter
+	gardenerCustomMetrics    component.DeployWaiter
 	etcdDruid                component.DeployWaiter
 	clusterAutoscaler        component.DeployWaiter
 	machineControllerManager component.DeployWaiter
@@ -180,6 +181,10 @@ func (r *Reconciler) instantiateComponents(
 		return
 	}
 	c.hvpaController, err = r.newHVPA()
+	if err != nil {
+		return
+	}
+	c.gardenerCustomMetrics, err = r.newGardenerCustomMetics(secretsManager)
 	if err != nil {
 		return
 	}
@@ -503,29 +508,24 @@ func (r *Reconciler) newDependencyWatchdogs(seedSettings *gardencorev1beta1.Seed
 	return
 }
 
-// defaultGardenerCustomMetics creates a [component.Deployer] for the gardener-custom-metrics component.
-func defaultGardenerCustomMetics(
-	client client.Client,
-	seedVersion *semver.Version,
-	secretsManager secretsmanager.Interface,
-	gardenNamespaceName string) (component.DeployWaiter, error) {
-
+// newGardenerCustomMetics creates a [component.Deployer] for the gardener-custom-metrics component.
+func (r *Reconciler) newGardenerCustomMetics(secretsManager secretsmanager.Interface) (component.DeployWaiter, error) {
 	image, err := imagevector.ImageVector().FindImage(
-		imagevector.ImageNameGardenerCustomMetics, imagevectorutils.TargetVersion(seedVersion.String()))
+		imagevector.ImageNameGardenerCustomMetics, imagevectorutils.TargetVersion(r.SeedVersion.String()))
 	if err != nil {
 		return nil, fmt.Errorf("An error occurred while creating the %s component - "+
 			"failed to find an image version suitable for seed version '%s' in the image vector. "+
 			"The error message reported by the underlying operation follows: %w",
 			imagevector.ImageNameGardenerCustomMetics,
-			seedVersion,
+			r.SeedVersion,
 			err)
 	}
 
 	return gardenercustommetrics.NewGardenerCustomMetrics(
-		gardenNamespaceName,
+		r.GardenNamespace,
 		image.String(),
 		features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling),
-		client,
+		r.SeedClientSet.Client(),
 		secretsManager), nil
 }
 

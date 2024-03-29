@@ -223,14 +223,6 @@ func (r *Reconciler) runReconcileSeedFlow(
 	if err != nil {
 		return err
 	}
-	
-	// TODO: Andrey: Move to instantiateComponents()
-	gardenerCustomMetrics, err :=
-		defaultGardenerCustomMetics(seedClient, kubernetesVersion, secretsManager, r.GardenNamespace)
-	if err != nil {
-		return err
-	}
-
 	var (
 		g = flow.NewGraph("Seed reconciliation")
 
@@ -420,8 +412,8 @@ func (r *Reconciler) runReconcileSeedFlow(
 			SkipIf:       seedIsGarden,
 		})
 		_ = g.Add(flow.Task{
-			Name: "Deploying gardener-custom-metrics",
-			Fn:   gardenerCustomMetrics.Deploy,
+			Name:         "Deploying gardener-custom-metrics",
+			Fn:           c.gardenerCustomMetrics.Deploy,
 			Dependencies: flow.NewTaskIDs(syncPointReadyForSystemComponents),
 			SkipIf:       seedIsGarden,
 		})
