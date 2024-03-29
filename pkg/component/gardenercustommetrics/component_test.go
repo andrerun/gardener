@@ -363,9 +363,6 @@ spec:
         - mountPath: /var/run/secrets/gardener.cloud/tls
           name: gardener-custom-metrics-tls
           readOnly: true
-        - mountPath: /var/run/secrets/kubernetes.io/serviceaccount
-          name: kube-api-access-gardener
-          readOnly: true
       dnsPolicy: ClusterFirst
       priorityClassName: gardener-system-700
       restartPolicy: Always
@@ -379,24 +376,6 @@ spec:
       - name: gardener-custom-metrics-tls
         secret:
           secretName: gardener-custom-metrics-tls
-      - name: kube-api-access-gardener
-        projected:
-          defaultMode: 420
-          sources:
-          - serviceAccountToken:
-              expirationSeconds: 43200
-              path: token
-          - configMap:
-              items:
-              - key: ca.crt
-                path: ca.crt
-              name: kube-root-ca.crt
-          - downwardAPI:
-              items:
-              - fieldRef:
-                  apiVersion: v1
-                  fieldPath: metadata.namespace
-                path: namespace
 status: {}
 
 ####################################################################################################
@@ -538,7 +517,7 @@ status:
 serviceaccount__test-namespace__gardener-custom-metrics.yaml: 
 
 apiVersion: v1
-automountServiceAccountToken: true
+automountServiceAccountToken: false
 kind: ServiceAccount
 metadata:
   creationTimestamp: null

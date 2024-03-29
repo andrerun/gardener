@@ -95,11 +95,6 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 									Name:      "gardener-custom-metrics-tls",
 									ReadOnly:  true,
 								},
-								{
-									MountPath: "/var/run/secrets/kubernetes.io/serviceaccount",
-									Name:      "kube-api-access-gardener",
-									ReadOnly:  true,
-								},
 							},
 						},
 					},
@@ -118,48 +113,6 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							VolumeSource: corev1.VolumeSource{
 								Secret: &corev1.SecretVolumeSource{
 									SecretName: serverSecretName,
-								},
-							},
-						},
-						{
-							Name: "kube-api-access-gardener",
-							VolumeSource: corev1.VolumeSource{
-								Projected: &corev1.ProjectedVolumeSource{
-									DefaultMode: pointer.Int32(420),
-									Sources: []corev1.VolumeProjection{
-										{
-											ServiceAccountToken: &corev1.ServiceAccountTokenProjection{
-												ExpirationSeconds: pointer.Int64(43200),
-												Path:              "token",
-											},
-										},
-										{
-											ConfigMap: &corev1.ConfigMapProjection{
-												Items: []corev1.KeyToPath{
-													{
-														Key:  "ca.crt",
-														Path: "ca.crt",
-													},
-												},
-												LocalObjectReference: corev1.LocalObjectReference{
-													Name: "kube-root-ca.crt",
-												},
-											},
-										},
-										{
-											DownwardAPI: &corev1.DownwardAPIProjection{
-												Items: []corev1.DownwardAPIVolumeFile{
-													{
-														FieldRef: &corev1.ObjectFieldSelector{
-															APIVersion: "v1",
-															FieldPath:  "metadata.namespace",
-														},
-														Path: "namespace",
-													},
-												},
-											},
-										},
-									},
 								},
 							},
 						},

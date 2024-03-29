@@ -12,6 +12,6 @@ func makeServiceAccount(namespace string) *corev1.ServiceAccount {
 			Name:      "gardener-custom-metrics",
 			Namespace: namespace,
 		},
-		AutomountServiceAccountToken: pointer.Bool(true),
+		AutomountServiceAccountToken: pointer.Bool(false),
 	}
 }
