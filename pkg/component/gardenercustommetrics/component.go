@@ -12,7 +12,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	gconstants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
-	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/component/gardenercustommetrics/kubeobjects"
 	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
@@ -31,9 +30,8 @@ type GardenerCustomMetrics struct {
 	containerImageName string
 	isEnabled          bool
 
-	seedClient              client.Client
-	secretsManager          secretsmanager.Interface
-	managedResourceRegistry *managedresources.Registry
+	seedClient     client.Client
+	secretsManager secretsmanager.Interface
 
 	testIsolation gardenerCustomMetricsTestIsolation // Provides indirections necessary to isolate the unit during tests
 }
@@ -60,8 +58,6 @@ func NewGardenerCustomMetrics(
 		isEnabled:          enabled,
 		seedClient:         seedClient,
 		secretsManager:     secretsManager,
-		managedResourceRegistry: managedresources.NewRegistry(
-			kubernetes.SeedScheme, kubernetes.SeedCodec, kubernetes.SeedSerializer),
 
 		testIsolation: gardenerCustomMetricsTestIsolation{
 			CreateForSeed: managedresources.CreateForSeed,
