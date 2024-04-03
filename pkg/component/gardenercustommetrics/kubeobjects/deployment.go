@@ -85,7 +85,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							Resources: corev1.ResourceRequirements{
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("80m"),
-									corev1.ResourceMemory: resource.MustParse("800Mi"),
+									corev1.ResourceMemory: resource.MustParse("200Mi"),
 								},
 							},
 							TerminationMessagePath:   "/dev/termination-log",

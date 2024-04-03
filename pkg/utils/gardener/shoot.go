@@ -322,6 +322,7 @@ type AccessSecret struct {
 	targetSecretName        string
 	targetSecretNamespace   string
 	serviceAccountLabels    map[string]string
+	secretLabels            map[string]string
 }
 
 // NewShootAccessSecret returns a new AccessSecret object and initializes it with an empty corev1.Secret object
@@ -368,6 +369,11 @@ func (s *AccessSecret) WithServiceAccountLabels(labels map[string]string) *Acces
 	return s
 }
 
+func (s *AccessSecret) WithSecretLabels(labels map[string]string) *AccessSecret {
+	s.secretLabels = labels
+	return s
+}
+
 // WithTokenExpirationDuration sets the tokenExpirationDuration field of the AccessSecret.
 func (s *AccessSecret) WithTokenExpirationDuration(duration string) *AccessSecret {
 	s.tokenExpirationDuration = duration
@@ -406,6 +412,11 @@ func (s *AccessSecret) Reconcile(ctx context.Context, c client.Client) error {
 				return fmt.Errorf("failed marshaling the service account labels to JSON: %w", err)
 			}
 			metav1.SetMetaDataAnnotation(&s.Secret.ObjectMeta, resourcesv1alpha1.ServiceAccountLabels, string(labelsJSON))
+		}
+		if s.secretLabels != nil {
+			for key, value := range s.secretLabels {
+				metav1.SetMetaDataLabel(&s.Secret.ObjectMeta, key, value)
+			}
 		}
 
 		if s.tokenExpirationDuration != "" {

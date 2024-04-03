@@ -304,7 +304,9 @@ func makeDefaultVPAResourcePolicies(containerNameApiserver string) []vpaautoscal
 // Creates an empty shoot access secret. The name of the resulting object is a fixed function of the input parameters,
 // so two instances created with the same parameters point to the same server side object.
 func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gutil.AccessSecret {
-	return gutil.NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespace)
+	return gutil.
+		NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespace).
+		WithSecretLabels(map[string]string{"name": "shoot-access-gardener-custom-metrics"})
 }
 
 // reconcileAppResources reconciles those bipa resources which belong inside the shoot cluster. This function does not
