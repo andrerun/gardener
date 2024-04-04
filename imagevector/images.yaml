@@ -618,8 +618,8 @@ images:
   # Bilinear pod autoscaler
 - name: gardener-custom-metrics
   sourceRepository: github.com/gardener/gardener-custom-metrics
-  repository: eu.gcr.io/gardener-project/gardener/gardener-custom-metrics
-  tag: "v0.10.11-dev"
+  repository: europe-docker.pkg.dev/gardener-project/public/gardener/gardener-custom-metrics
+  tag: "v0.1.0-dev-bfedf06e54b83eae7792a01e7f76f8f6a55bea85"
 
 # Horizontal cluster-proportional-autoscaler
 - name: cluster-proportional-autoscaler
