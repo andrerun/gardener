@@ -25,8 +25,7 @@ import (
 
 func makePDB(namespace string, runtimeVersion *semver.Version) *policyv1.PodDisruptionBudget {
 	labels := map[string]string{
-		"gardener.cloud/role":                 "gardener-custom-metrics",
-		"resources.gardener.cloud/managed-by": "gardener",
+		"gardener.cloud/role": "gardener-custom-metrics",
 	}
 
 	selector := &metav1.LabelSelector{

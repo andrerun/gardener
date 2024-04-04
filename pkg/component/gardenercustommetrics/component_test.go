@@ -336,7 +336,6 @@ metadata:
   creationTimestamp: null
   labels:
     gardener.cloud/role: gardener-custom-metrics
-    resources.gardener.cloud/managed-by: gardener
   name: gardener-custom-metrics
   namespace: test-namespace
 spec:
