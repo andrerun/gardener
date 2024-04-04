@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/Masterminds/semver/v3"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
@@ -64,7 +65,7 @@ var _ = Describe("GardenerCustomMetrics", func() {
 		newGcmx = func(isEnabled bool) (*GardenerCustomMetrics, client.Client, secretsmanager.Interface, *testBehaviorCapture) {
 			var seedClient client.Client = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
 			var fakeSecretsManager secretsmanager.Interface = fakesecretsmanager.New(seedClient, namespaceName)
-			gcmx := NewGardenerCustomMetrics(namespaceName, imageName, isEnabled, seedClient, fakeSecretsManager)
+			gcmx := NewGardenerCustomMetrics(namespaceName, imageName, isEnabled, semver.MustParse("1.26.1"), seedClient, fakeSecretsManager)
 			capture := &testBehaviorCapture{}
 			// We isolate the deployment workflow at the CreateForSeed() level, because that point offers a
 			// convenient, declarative representation (deployed objects YAML)

@@ -17,7 +17,7 @@ package kubeobjects
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func makeAPIService(namespace string) *apiregistrationv1.APIService {
@@ -33,7 +33,7 @@ func makeAPIService(namespace string) *apiregistrationv1.APIService {
 			Service: &apiregistrationv1.ServiceReference{
 				Name:      "gardener-custom-metrics",
 				Namespace: namespace,
-				Port:      pointer.Int32(443),
+				Port:      ptr.To[int32](443),
 			},
 			Group:                "custom.metrics.k8s.io",
 			Version:              "v1beta2",

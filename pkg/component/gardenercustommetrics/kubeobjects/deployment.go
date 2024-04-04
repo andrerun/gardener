@@ -19,7 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func makeDeployment(deploymentName, namespace, containerImageName, serverSecretName string) *appsv1.Deployment {
@@ -36,8 +36,8 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
-			Replicas:             pointer.Int32(1),
-			RevisionHistoryLimit: pointer.Int32(2),
+			Replicas:             ptr.To[int32](1),
+			RevisionHistoryLimit: ptr.To[int32](2),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"app":                 "gardener-custom-metrics",
@@ -118,7 +118,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 					RestartPolicy:                 corev1.RestartPolicyAlways,
 					SchedulerName:                 "default-scheduler",
 					ServiceAccountName:            "gardener-custom-metrics",
-					TerminationGracePeriodSeconds: pointer.Int64(30),
+					TerminationGracePeriodSeconds: ptr.To[int64](30),
 					Volumes: []corev1.Volume{
 						{
 							Name: "gardener-custom-metrics-tls",

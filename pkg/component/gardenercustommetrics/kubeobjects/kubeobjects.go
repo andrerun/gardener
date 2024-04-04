@@ -16,6 +16,8 @@
 package kubeobjects
 
 import (
+	"github.com/Masterminds/semver/v3"
+
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
 )
@@ -23,7 +25,7 @@ import (
 // GetKubeObjectsAsYamlBytes returns the YAML definitions for all k8s objects necessary to materialise the GCMx component.
 // In the resulting map, each object is placed under a key which represents its identity in a format appropriate for use
 // as key in map-structured k8s objects, such as Secrets and ConfigMaps.
-func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, serverSecretName string) (map[string][]byte, error) {
+func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, serverSecretName string, runtimeVersion *semver.Version) (map[string][]byte, error) {
 	registry := managedresources.NewRegistry(kubernetes.ShootScheme, kubernetes.ShootCodec, kubernetes.ShootSerializer)
 
 	return registry.AddAllAndSerialize(
@@ -39,7 +41,7 @@ func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, se
 		makeDeployment(deploymentName, namespace, containerImageName, serverSecretName),
 		makeService(namespace),
 		makeAPIService(namespace),
-		makePDB(namespace),
+		makePDB(namespace, runtimeVersion),
 		makeVPA(namespace),
 	)
 }

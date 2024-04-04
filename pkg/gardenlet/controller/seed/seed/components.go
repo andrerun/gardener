@@ -525,6 +525,7 @@ func (r *Reconciler) newGardenerCustomMetics(secretsManager secretsmanager.Inter
 		r.GardenNamespace,
 		image.String(),
 		features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling),
+		r.SeedVersion,
 		r.SeedClientSet.Client(),
 		secretsManager), nil
 }

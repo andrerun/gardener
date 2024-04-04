@@ -29,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/component-base/featuregate"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -339,10 +338,10 @@ var _ = Describe("KubeAPIServer", func() {
 						botanist.ManagedSeed = &seedmanagementv1alpha1.ManagedSeed{}
 						botanist.ManagedSeedAPIServer = &helper.ManagedSeedAPIServer{
 							Autoscaler: &helper.ManagedSeedAPIServerAutoscaler{
-								MinReplicas: pointer.Int32(16),
+								MinReplicas: ptr.To[int32](16),
 								MaxReplicas: 32,
 							},
-							Replicas: pointer.Int32(24),
+							Replicas: ptr.To[int32](24),
 						}
 					},
 					map[featuregate.Feature]bool{

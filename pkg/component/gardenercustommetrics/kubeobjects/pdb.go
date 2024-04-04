@@ -15,13 +15,15 @@
 package kubeobjects
 
 import (
+	"github.com/Masterminds/semver/v3"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/pointer"
+
+	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 )
 
-func makePDB(namespace string) *policyv1.PodDisruptionBudget {
+func makePDB(namespace string, runtimeVersion *semver.Version) *policyv1.PodDisruptionBudget {
 	labels := map[string]string{
 		"gardener.cloud/role":                 "gardener-custom-metrics",
 		"resources.gardener.cloud/managed-by": "gardener",
@@ -41,11 +43,12 @@ func makePDB(namespace string) *policyv1.PodDisruptionBudget {
 			Labels:    labels,
 		},
 		Spec: policyv1.PodDisruptionBudgetSpec{
-			MaxUnavailable:             &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
-			UnhealthyPodEvictionPolicy: (*policyv1.UnhealthyPodEvictionPolicyType)(pointer.String(string(policyv1.AlwaysAllow))),
-			Selector:                   selector,
+			MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+			Selector:       selector,
 		},
 	}
+
+	kubernetesutils.SetAlwaysAllowEviction(pdb, runtimeVersion)
 
 	return pdb
 }

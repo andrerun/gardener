@@ -43,7 +43,6 @@ import (
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
 	clientcmdv1 "k8s.io/client-go/tools/clientcmd/api/v1"
 	testclock "k8s.io/utils/clock/testing"
-	"k8s.io/utils/pointer"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -238,13 +237,13 @@ var _ = Describe("KubeAPIServer", func() {
 				Entry("Scaling mode is HVPA", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
 				Entry("Scaling mode is Bilinear", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBilinear}),
 				Entry("replicas is nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: nil}),
-				Entry("replicas is 0", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: pointer.Int32(0)}),
+				Entry("replicas is 0", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: ptr.To[int32](0)}),
 			)
 
 			BeforeEach(func() {
 				autoscalingConfig = apiserver.AutoscalingConfig{
 					AutoscalingMode: apiserver.AutoscalingModeBaseline,
-					Replicas:        pointer.Int32(2),
+					Replicas:        ptr.To[int32](2),
 					MinReplicas:     4,
 					MaxReplicas:     6,
 				}
@@ -645,7 +644,7 @@ var _ = Describe("KubeAPIServer", func() {
 						Values: apiserver.Values{
 							Autoscaling: apiserver.AutoscalingConfig{
 								AutoscalingMode:          autoscalingMode,
-								Replicas:                 pointer.Int32(2),
+								Replicas:                 ptr.To[int32](2),
 								MinReplicas:              5,
 								MaxReplicas:              5,
 								ScaleDownDisabledForHvpa: true,

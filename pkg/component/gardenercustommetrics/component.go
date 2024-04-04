@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -43,6 +44,7 @@ type GardenerCustomMetrics struct {
 	namespaceName      string
 	containerImageName string
 	isEnabled          bool
+	runtimeVersion     *semver.Version
 
 	seedClient     client.Client
 	secretsManager secretsmanager.Interface
@@ -63,12 +65,14 @@ func NewGardenerCustomMetrics(
 	namespace string,
 	containerImageName string,
 	enabled bool,
+	runtimeVersion *semver.Version,
 	seedClient client.Client,
 	secretsManager secretsmanager.Interface) *GardenerCustomMetrics {
 	return &GardenerCustomMetrics{
 		namespaceName:      namespace,
 		containerImageName: containerImageName,
 		isEnabled:          enabled,
+		runtimeVersion:     runtimeVersion,
 		seedClient:         seedClient,
 		secretsManager:     secretsManager,
 
@@ -105,7 +109,7 @@ func (gcmx *GardenerCustomMetrics) Deploy(ctx context.Context) error {
 	}
 
 	kubeObjects, err := kubeobjects.GetKubeObjectsAsYamlBytes(
-		deploymentName, gcmx.namespaceName, gcmx.containerImageName, serverCertificateSecret.Name)
+		deploymentName, gcmx.namespaceName, gcmx.containerImageName, serverCertificateSecret.Name, gcmx.runtimeVersion)
 	if err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to create the K8s object definitions which describe the individual "+

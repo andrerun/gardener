@@ -25,7 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
@@ -89,7 +89,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 					},
 					Behavior: &autoscalingv2.HorizontalPodAutoscalerBehavior{
 						ScaleDown: &autoscalingv2.HPAScalingRules{
-							StabilizationWindowSeconds: pointer.Int32(900),
+							StabilizationWindowSeconds: ptr.To[int32](900),
 						},
 					},
 					Metrics: []autoscalingv2.MetricSpec{
@@ -130,7 +130,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 						Name:       deploymentName,
 					},
 					UpdatePolicy: &vpaautoscalingv1.PodUpdatePolicy{
-						MinReplicas: pointer.Int32(1),
+						MinReplicas: ptr.To[int32](1),
 						UpdateMode:  &updateModeAutoAsLvalue,
 					},
 					ResourcePolicy: &vpaautoscalingv1.PodResourcePolicy{

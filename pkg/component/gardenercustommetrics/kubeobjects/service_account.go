@@ -17,7 +17,7 @@ package kubeobjects
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/pointer"
+	"k8s.io/utils/ptr"
 )
 
 func makeServiceAccount(namespace string) *corev1.ServiceAccount {
@@ -26,6 +26,6 @@ func makeServiceAccount(namespace string) *corev1.ServiceAccount {
 			Name:      "gardener-custom-metrics",
 			Namespace: namespace,
 		},
-		AutomountServiceAccountToken: pointer.Bool(false),
+		AutomountServiceAccountToken: ptr.To(false),
 	}
 }
