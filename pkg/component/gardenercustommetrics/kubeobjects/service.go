@@ -1,6 +1,7 @@
 package kubeobjects
 
 import (
+	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -18,6 +19,9 @@ func makeService(namespace string) *corev1.Service {
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "gardener-custom-metrics",
 			Namespace: namespace,
+			Annotations: map[string]string{
+				resourcesv1alpha1.NetworkingFromWorldToPorts: `[{"protocol":"TCP","port":6443}]`,
+			},
 		},
 		Spec: corev1.ServiceSpec{
 			IPFamilies: []corev1.IPFamily{corev1.IPv4Protocol},

@@ -22,7 +22,6 @@ func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, se
 		makeLeaderElectorRoleBinding(namespace),
 		makeAuthDelegatorClusterRoleBinding(namespace),
 		makeAuthReaderRoleBinding(namespace),
-		makeShootVpnAccessNetworkPolicy(namespace),
 		makeDeployment(deploymentName, namespace, containerImageName, serverSecretName),
 		makeService(namespace),
 		makeAPIService(namespace),

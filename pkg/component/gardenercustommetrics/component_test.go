@@ -294,7 +294,7 @@ spec:
         resources:
           requests:
             cpu: 80m
-            memory: 800Mi
+            memory: 200Mi
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
@@ -312,34 +312,6 @@ spec:
         secret:
           secretName: gardener-custom-metrics-tls
 status: {}
-
-####################################################################################################
-networkpolicy__test-namespace__gardener-custom-metrics--ingress-from-vpn-shoot.yaml: 
-
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics--ingress-from-vpn-shoot
-  namespace: test-namespace
-spec:
-  ingress:
-  - from:
-    - namespaceSelector:
-        matchLabels:
-          kubernetes.io/metadata.name: kube-system
-      podSelector:
-        matchLabels:
-          app: vpn-shoot
-          gardener.cloud/role: system-component
-    ports:
-    - port: 6443
-  podSelector:
-    matchLabels:
-      app: gardener-custom-metrics
-      gardener.cloud/role: gardener-custom-metrics
-  policyTypes:
-  - Ingress
 
 ####################################################################################################
 poddisruptionbudget__test-namespace__gardener-custom-metrics.yaml: 
@@ -485,6 +457,8 @@ service__test-namespace__gardener-custom-metrics.yaml:
 apiVersion: v1
 kind: Service
 metadata:
+  annotations:
+    networking.resources.gardener.cloud/from-world-to-ports: '[{"protocol":"TCP","port":6443}]'
   creationTimestamp: null
   name: gardener-custom-metrics
   namespace: test-namespace
