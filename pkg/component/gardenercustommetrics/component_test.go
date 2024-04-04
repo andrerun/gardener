@@ -175,29 +175,13 @@ spec:
 status: {}
 
 ####################################################################################################
-clusterrole____gardener-custom-metrics--endpoint-editor.yaml: 
+clusterrole____gardener-custom-metrics--shoot-reader.yaml: 
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   creationTimestamp: null
-  name: gardener-custom-metrics--endpoint-editor
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - endpoints
-  verbs:
-  - '*'
-
-####################################################################################################
-clusterrole____gardener-custom-metrics--pod-reader.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics--pod-reader
+  name: gardener-custom-metrics--shoot-reader
 rules:
 - apiGroups:
   - ""
@@ -207,16 +191,6 @@ rules:
   - get
   - list
   - watch
-
-####################################################################################################
-clusterrole____gardener-custom-metrics--secret-reader.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics--secret-reader
-rules:
 - apiGroups:
   - ""
   resources:
@@ -227,51 +201,17 @@ rules:
   - watch
 
 ####################################################################################################
-clusterrolebinding____gardener-custom-metrics--endpoint-editor.yaml: 
+clusterrolebinding____gardener-custom-metrics--shoot-reader.yaml: 
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   creationTimestamp: null
-  name: gardener-custom-metrics--endpoint-editor
+  name: gardener-custom-metrics--shoot-reader
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: gardener-custom-metrics--endpoint-editor
-subjects:
-- kind: ServiceAccount
-  name: gardener-custom-metrics
-  namespace: test-namespace
-
-####################################################################################################
-clusterrolebinding____gardener-custom-metrics--pod-reader.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics--pod-reader
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gardener-custom-metrics--pod-reader
-subjects:
-- kind: ServiceAccount
-  name: gardener-custom-metrics
-  namespace: test-namespace
-
-####################################################################################################
-clusterrolebinding____gardener-custom-metrics--secret-reader.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics--secret-reader
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gardener-custom-metrics--secret-reader
+  name: gardener-custom-metrics--shoot-reader
 subjects:
 - kind: ServiceAccount
   name: gardener-custom-metrics
@@ -303,7 +243,7 @@ metadata:
   creationTimestamp: null
   labels:
     app: gardener-custom-metrics
-    high-availability-config.resources.gardener.cloud/type: controller
+    high-availability-config.resources.gardener.cloud/type: server
   name: gardener-custom-metrics
   namespace: test-namespace
 spec:
@@ -320,8 +260,6 @@ spec:
       labels:
         app: gardener-custom-metrics
         gardener.cloud/role: gardener-custom-metrics
-        networking.gardener.cloud/from-seed: allowed
-        networking.gardener.cloud/to-apiserver: allowed
         networking.gardener.cloud/to-dns: allowed
         networking.gardener.cloud/to-runtime-apiserver: allowed
         networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443: allowed
@@ -367,9 +305,6 @@ spec:
       priorityClassName: gardener-system-700
       restartPolicy: Always
       schedulerName: default-scheduler
-      securityContext:
-        seccompProfile:
-          type: RuntimeDefault
       serviceAccountName: gardener-custom-metrics
       terminationGracePeriodSeconds: 30
       volumes:
@@ -432,13 +367,39 @@ status:
   expectedPods: 0
 
 ####################################################################################################
-role__test-namespace__gardener-custom-metrics--lease-editor.yaml: 
+role__test-namespace__gardener-custom-metrics--endpoint-editor.yaml: 
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   creationTimestamp: null
-  name: gardener-custom-metrics--lease-editor
+  name: gardener-custom-metrics--endpoint-editor
+  namespace: test-namespace
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - endpoints
+  verbs:
+  - create
+- apiGroups:
+  - ""
+  resourceNames:
+  - gardener-custom-metrics
+  resources:
+  - endpoints
+  verbs:
+  - get
+  - update
+
+####################################################################################################
+role__test-namespace__gardener-custom-metrics--leader-elector.yaml: 
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  creationTimestamp: null
+  name: gardener-custom-metrics--leader-elector
   namespace: test-namespace
 rules:
 - apiGroups:
@@ -454,6 +415,15 @@ rules:
   - patch
   - delete
   - deletecollection
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - get
+  - list
+  - watch
+  - create
 
 ####################################################################################################
 rolebinding__kube-system__gardener-custom-metrics--auth-reader.yaml: 
@@ -474,18 +444,36 @@ subjects:
   namespace: test-namespace
 
 ####################################################################################################
-rolebinding__test-namespace__gardener-custom-metrics--lease-editor.yaml: 
+rolebinding__test-namespace__gardener-custom-metrics--endpoint-editor.yaml: 
 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   creationTimestamp: null
-  name: gardener-custom-metrics--lease-editor
+  name: gardener-custom-metrics--endpoint-editor
   namespace: test-namespace
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
-  name: gardener-custom-metrics--lease-editor
+  name: gardener-custom-metrics--endpoint-editor
+subjects:
+- kind: ServiceAccount
+  name: gardener-custom-metrics
+  namespace: test-namespace
+
+####################################################################################################
+rolebinding__test-namespace__gardener-custom-metrics--leader-elector.yaml: 
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  creationTimestamp: null
+  name: gardener-custom-metrics--leader-elector
+  namespace: test-namespace
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: gardener-custom-metrics--leader-elector
 subjects:
 - kind: ServiceAccount
   name: gardener-custom-metrics

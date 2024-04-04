@@ -15,7 +15,10 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			Namespace: namespace,
 			Labels: map[string]string{
 				"app": "gardener-custom-metrics",
-				"high-availability-config.resources.gardener.cloud/type": "controller",
+				// The actual availability requirement of gardener-custom-metrics is closer to the "controller"
+				// availability level (even less, actually). The value below is set to "server" solely to satisfy
+				// the requirement for consistency with existing components.
+				"high-availability-config.resources.gardener.cloud/type": "server",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -30,13 +33,11 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":                                 "gardener-custom-metrics",
-						"gardener.cloud/role":                 "gardener-custom-metrics",
-						"networking.gardener.cloud/from-seed": "allowed",
-						"networking.gardener.cloud/to-dns":    "allowed",
+						"app":                              "gardener-custom-metrics",
+						"gardener.cloud/role":              "gardener-custom-metrics",
+						"networking.gardener.cloud/to-dns": "allowed",
 						"networking.gardener.cloud/to-runtime-apiserver":                           "allowed",
 						"networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443": "allowed",
-						"networking.gardener.cloud/to-apiserver":                                   "allowed",
 					},
 				},
 				Spec: corev1.PodSpec{
@@ -98,13 +99,10 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							},
 						},
 					},
-					DNSPolicy:         corev1.DNSClusterFirst,
-					PriorityClassName: "gardener-system-700",
-					RestartPolicy:     corev1.RestartPolicyAlways,
-					SchedulerName:     "default-scheduler",
-					SecurityContext: &corev1.PodSecurityContext{
-						SeccompProfile: &corev1.SeccompProfile{Type: "RuntimeDefault"},
-					},
+					DNSPolicy:                     corev1.DNSClusterFirst,
+					PriorityClassName:             "gardener-system-700",
+					RestartPolicy:                 corev1.RestartPolicyAlways,
+					SchedulerName:                 "default-scheduler",
 					ServiceAccountName:            "gardener-custom-metrics",
 					TerminationGracePeriodSeconds: pointer.Int64(30),
 					Volumes: []corev1.Volume{
