@@ -1,3 +1,17 @@
+// Copyright 2024 SAP SE or an SAP affiliate company. All rights reserved. This file is licensed under the Apache Software License, v. 2 except as noted otherwise in the LICENSE file
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 /*
 Package bipa implements the "BilinearPodAutoscaler" - an autoscaling setup for kube-apiserver comprising an independently
 driven horizontal and vertical pod autoscalers.
@@ -26,13 +40,13 @@ import (
 	"k8s.io/utils/pointer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	gconstants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
-	gresources "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
+	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/component/gardenercustommetrics"
 	"github.com/gardener/gardener/pkg/controllerutils"
-	gutil "github.com/gardener/gardener/pkg/utils/gardener"
-	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	gardenerutils "github.com/gardener/gardener/pkg/utils/gardener"
+	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
 )
 
@@ -86,14 +100,14 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 			err)
 	}
 
-	if err := client.IgnoreNotFound(kutil.DeleteObject(ctx, seedClient, bipa.makeEmptyHPA())); err != nil {
+	if err := client.IgnoreNotFound(kubernetesutils.DeleteObject(ctx, seedClient, bipa.makeEmptyHPA())); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to delete the HPA which is part of the BilinearPodAutoscaler from the server. "+
 			"The error message reported by the underlying operation follows: %w",
 			err)
 	}
 
-	if err := client.IgnoreNotFound(kutil.DeleteObject(ctx, seedClient, bipa.makeEmptyVPA())); err != nil {
+	if err := client.IgnoreNotFound(kubernetesutils.DeleteObject(ctx, seedClient, bipa.makeEmptyVPA())); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to delete the VPA which is part of the BilinearPodAutoscaler from the server. "+
 			"The error message reported by the underlying operation follows: %w",
@@ -101,7 +115,7 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 	}
 
 	shootAccessSecret := bipa.makeShootAccessSecret()
-	if err := kutil.DeleteObjects(ctx, seedClient, shootAccessSecret.Secret); err != nil {
+	if err := kubernetesutils.DeleteObjects(ctx, seedClient, shootAccessSecret.Secret); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to delete the secret '%s' from the server. The purpose of that secret is to provide shoot "+
 			"access to the gardener-custom-metrics component, which is deployed as part of the BilinearPodAutoscaler. "+
@@ -119,7 +133,6 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 // The 'parameters' parameter specifies the desired state that is to be applied upon the server-side autoscaler setup.
 func (bipa *BilinearPodAutoscaler) Reconcile(
 	ctx context.Context, seedClient client.Client, parameters *DesiredStateParameters) error {
-
 	baseErrorMessage :=
 		fmt.Sprintf("An error occurred while reconciling BilinearPodAutoscaler '%s' in namespace '%s'",
 			bipa.deploymentNameApiserver,
@@ -170,14 +183,14 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 
 //#region Private implementation
 
-// Returns the name of BilinearPodAutoscaler's server-side HPA
+// GetHPAName returns the name of BilinearPodAutoscaler's server-side HPA.
 func (bipa *BilinearPodAutoscaler) GetHPAName() string {
 	return bipa.deploymentNameApiserver + "-bipa"
 }
 
-// Returns the name of BilinearPodAutoscaler's server-side VPA
+// GetVPAName returns the name of BilinearPodAutoscaler's server-side VPA.
 func (bipa *BilinearPodAutoscaler) GetVPAName() string {
-	return bipa.GetHPAName() // We use the same name for the VPA and the HPA objects
+	return bipa.deploymentNameApiserver + "-bipa"
 }
 
 // Returns an empty HPA object pointing to the server-side HPA, which is part of this BilinearPodAutoscaler
@@ -198,7 +211,6 @@ func (bipa *BilinearPodAutoscaler) makeEmptyVPA() *vpaautoscalingv1.VerticalPodA
 // minReplicaCount and maxReplicaCount control the horizontal scaling range.
 func (bipa *BilinearPodAutoscaler) reconcileHPA(
 	ctx context.Context, seedClient client.Client, minReplicaCount int32, maxReplicaCount int32) error {
-
 	hpa := bipa.makeEmptyHPA()
 	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, seedClient, hpa, func() error {
 		hpa.Spec.ScaleTargetRef = autoscalingv2.CrossVersionObjectReference{
@@ -226,7 +238,7 @@ func (bipa *BilinearPodAutoscaler) reconcileHPA(
 		hpa.Spec.Metrics = hpaMetrics
 		hpa.Spec.MinReplicas = &minReplicaCount
 		hpa.Spec.MaxReplicas = maxReplicaCount
-		hpa.ObjectMeta.Labels = map[string]string{gconstants.LabelRole: gconstants.LabelAPIServer + "-hpa"}
+		hpa.ObjectMeta.Labels = map[string]string{v1beta1constants.LabelRole: v1beta1constants.LabelAPIServer + "-hpa"}
 
 		return nil
 	})
@@ -244,9 +256,7 @@ func (bipa *BilinearPodAutoscaler) reconcileHPA(
 }
 
 // Reconciles the VPA resource which is part of the BilinearPodAutoscaler
-func (bipa *BilinearPodAutoscaler) reconcileVPA(
-	ctx context.Context, seedClient client.Client, containerNameApiserver string, minReplicaCount int32) error {
-
+func (bipa *BilinearPodAutoscaler) reconcileVPA(ctx context.Context, seedClient client.Client, containerNameApiserver string, minReplicaCount int32) error {
 	vpa := bipa.makeEmptyVPA()
 	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, seedClient, vpa, func() error {
 		vpa.Spec.Recommenders = nil
@@ -263,7 +273,7 @@ func (bipa *BilinearPodAutoscaler) reconcileVPA(
 		vpa.Spec.ResourcePolicy = &vpaautoscalingv1.PodResourcePolicy{
 			ContainerPolicies: makeDefaultVPAResourcePolicies(containerNameApiserver),
 		}
-		vpa.ObjectMeta.Labels = map[string]string{gconstants.LabelRole: gconstants.LabelAPIServer + "-vpa"}
+		vpa.ObjectMeta.Labels = map[string]string{v1beta1constants.LabelRole: v1beta1constants.LabelAPIServer + "-vpa"}
 
 		return nil
 	})
@@ -303,8 +313,8 @@ func makeDefaultVPAResourcePolicies(containerNameApiserver string) []vpaautoscal
 
 // Creates an empty shoot access secret. The name of the resulting object is a fixed function of the input parameters,
 // so two instances created with the same parameters point to the same server side object.
-func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gutil.AccessSecret {
-	return gutil.
+func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gardenerutils.AccessSecret {
+	return gardenerutils.
 		NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespace).
 		WithSecretLabels(map[string]string{"name": "shoot-access-gardener-custom-metrics"})
 }
@@ -332,7 +342,7 @@ func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, se
 		clusterRoleBinding = &rbacv1.ClusterRoleBinding{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:        "gardener.cloud:monitoring:gardener-custom-metrics-target",
-				Annotations: map[string]string{gresources.DeleteOnInvalidUpdate: "true"},
+				Annotations: map[string]string{resourcesv1alpha1.DeleteOnInvalidUpdate: "true"},
 			},
 			RoleRef: rbacv1.RoleRef{
 				APIGroup: rbacv1.GroupName,

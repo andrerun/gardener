@@ -1,24 +1,39 @@
+// Copyright 2024 SAP SE or an SAP affiliate company. All rights reserved. This file is licensed under the Apache Software License, v. 2 except as noted otherwise in the LICENSE file
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package gardenercustommetrics
 
 import (
 	"context"
 	"fmt"
+	"sort"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
-	"sort"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	gconstants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
-	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/retry"
 	retryfake "github.com/gardener/gardener/pkg/utils/retry/fake"
-	secretutils "github.com/gardener/gardener/pkg/utils/secrets"
+	secretsutils "github.com/gardener/gardener/pkg/utils/secrets"
 	secretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager"
 	fakesecretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager/fake"
 	"github.com/gardener/gardener/pkg/utils/test"
@@ -31,9 +46,7 @@ type testBehaviorCapture struct {
 }
 
 // CreateForSeed is a test isolation replacement for [gardenerCustomMetricsTestIsolation.CreateForSeed]
-func (capture *testBehaviorCapture) CreateForSeed(
-	ctx context.Context, client client.Client, namespace, name string, keepObjects bool, data map[string][]byte) error {
-
+func (capture *testBehaviorCapture) CreateForSeed(_ context.Context, _ client.Client, _, _ string, _ bool, data map[string][]byte) error {
 	capture.DeployedResourceYamlBytes = data
 	return nil
 }
@@ -583,14 +596,14 @@ status: {}
 				gcmx, seedClient, secretsManager, capture := newGcmx(false)
 				_, err := secretsManager.Generate(
 					context.Background(),
-					&secretutils.CertificateSecretConfig{
+					&secretsutils.CertificateSecretConfig{
 						Name:                        serverCertificateSecretName,
 						CommonName:                  fmt.Sprintf("%s.%s.svc", serviceName, gcmx.namespaceName),
-						DNSNames:                    kutil.DNSNamesForService(serviceName, gcmx.namespaceName),
-						CertType:                    secretutils.ServerCert,
+						DNSNames:                    kubernetesutils.DNSNamesForService(serviceName, gcmx.namespaceName),
+						CertType:                    secretsutils.ServerCert,
 						SkipPublishingCACertificate: true,
 					},
-					secretsmanager.SignedByCA(gconstants.SecretNameCASeed, secretsmanager.UseCurrentCA),
+					secretsmanager.SignedByCA(v1beta1constants.SecretNameCASeed, secretsmanager.UseCurrentCA),
 					secretsmanager.Rotate(secretsmanager.InPlace))
 				Expect(err).NotTo(HaveOccurred())
 				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)

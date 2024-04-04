@@ -369,6 +369,7 @@ func (s *AccessSecret) WithServiceAccountLabels(labels map[string]string) *Acces
 	return s
 }
 
+// WithSecretLabels sets the secretLabels field of the AccessSecret.
 func (s *AccessSecret) WithSecretLabels(labels map[string]string) *AccessSecret {
 	s.secretLabels = labels
 	return s

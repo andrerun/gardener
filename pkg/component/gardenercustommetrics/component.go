@@ -1,24 +1,38 @@
+// Copyright 2024 SAP SE or an SAP affiliate company. All rights reserved. This file is licensed under the Apache Software License, v. 2 except as noted otherwise in the LICENSE file
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 // Package gardenercustommetrics implements the gardener-custom-metrics seed component (aka GCMx).
 // For details, see the GardenerCustomMetrics type.
 package gardenercustommetrics
 
 import (
 	"context"
-	_ "embed"
 	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	gconstants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	"github.com/gardener/gardener/pkg/component/gardenercustommetrics/kubeobjects"
-	kutil "github.com/gardener/gardener/pkg/utils/kubernetes"
+	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
-	secretutils "github.com/gardener/gardener/pkg/utils/secrets"
+	secretsutils "github.com/gardener/gardener/pkg/utils/secrets"
 	secretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager"
 )
 
+// ComponentName is the component name.
 const ComponentName = componentBaseName
 
 // GardenerCustomMetrics manages an instance of the gardener-custom-metrics component (aka GCMx). The component is
@@ -51,7 +65,6 @@ func NewGardenerCustomMetrics(
 	enabled bool,
 	seedClient client.Client,
 	secretsManager secretsmanager.Interface) *GardenerCustomMetrics {
-
 	return &GardenerCustomMetrics{
 		namespaceName:      namespace,
 		containerImageName: containerImageName,
@@ -195,25 +208,25 @@ type gardenerCustomMetricsTestIsolation struct {
 func (gcmx *GardenerCustomMetrics) deployServerCertificate(ctx context.Context) (*corev1.Secret, error) {
 	const baseErrorMessage = "An error occurred while deploying server TLS certificate for gardener-custom-metrics"
 
-	_, found := gcmx.secretsManager.Get(gconstants.SecretNameCASeed)
+	_, found := gcmx.secretsManager.Get(v1beta1constants.SecretNameCASeed)
 	if !found {
 		return nil, fmt.Errorf(
 			baseErrorMessage+
 				" - the CA certificate, which is required to sign said server certificate, is missing. "+
 				"The CA certificate was expected in the '%s' secret, but that secret was not found",
-			gconstants.SecretNameCASeed)
+			v1beta1constants.SecretNameCASeed)
 	}
 
 	serverCertificateSecret, err := gcmx.secretsManager.Generate(
 		ctx,
-		&secretutils.CertificateSecretConfig{
+		&secretsutils.CertificateSecretConfig{
 			Name:                        serverCertificateSecretName,
 			CommonName:                  serviceName,
-			DNSNames:                    kutil.DNSNamesForService(serviceName, gcmx.namespaceName),
-			CertType:                    secretutils.ServerCert,
+			DNSNames:                    kubernetesutils.DNSNamesForService(serviceName, gcmx.namespaceName),
+			CertType:                    secretsutils.ServerCert,
 			SkipPublishingCACertificate: true,
 		},
-		secretsmanager.SignedByCA(gconstants.SecretNameCASeed, secretsmanager.UseCurrentCA),
+		secretsmanager.SignedByCA(v1beta1constants.SecretNameCASeed, secretsmanager.UseCurrentCA),
 		secretsmanager.Rotate(secretsmanager.InPlace))
 	if err != nil {
 		return nil, fmt.Errorf(

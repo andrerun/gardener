@@ -88,6 +88,9 @@ build:
             - pkg/component/gardener/resourcemanager
             - pkg/component/gardener/resourcemanager/constants
             - pkg/component/gardener/scheduler
+            - pkg/component/gardenercustommetrics
+            - pkg/component/gardenercustommetrics/kubeobjects
+            - pkg/component/kubeapiserver/bipa
             - pkg/component/kubernetes/apiserver
             - pkg/component/kubernetes/apiserver/constants
             - pkg/component/kubernetes/apiserverexposure

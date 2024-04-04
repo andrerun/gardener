@@ -86,6 +86,7 @@ type AuditWebhook struct {
 	Version *string
 }
 
+// AutoscalingMode represents the different autoscaling modes for an apiserver.
 type AutoscalingMode int8
 
 const (
