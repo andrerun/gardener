@@ -18,7 +18,6 @@ import (
 	"flag"
 	"os"
 	"testing"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -43,12 +42,5 @@ func TestE2E(t *testing.T) {
 		gardener.SetupDNSForMultiZoneTest()
 	}
 	RegisterFailHandler(Fail)
-
-	// TODO: Andrey: P1: Remove BIPA e2e test from initial PR
-	// Adjust the current ginkgo config
-	suiteConfig, reporterConfig := GinkgoConfiguration()
-	suiteConfig.Timeout = 120 * time.Minute // Autoscaling tests can take long
-	suiteConfig.LabelFilter = "Shoot && kapi-autoscaling"
-	// Pass it to RunSpecs
-	RunSpecs(t, "Test E2E Gardener Suite", suiteConfig, reporterConfig)
+	RunSpecs(t, "Test E2E Gardener Suite")
 }

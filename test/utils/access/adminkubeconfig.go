@@ -17,7 +17,6 @@ package access
 import (
 	"context"
 
-	"k8s.io/component-base/config"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -50,12 +49,11 @@ func createShootClientFromDynamicKubeconfig(
 		return nil, err
 	}
 
-	// Allow high request rate to keep client side throttling from interfering with tests
 	return kubernetes.NewClientFromBytes(
 		kubeconfig,
 		kubernetes.WithClientOptions(client.Options{Scheme: kubernetes.ShootScheme}),
 		kubernetes.WithDisabledCachedClient(),
-		kubernetes.WithClientConnectionOptions(config.ClientConnectionConfiguration{QPS: 1000, Burst: 1000}))
+	)
 }
 
 // RequestAdminKubeconfigForShoot requests an admin kubeconfig for the given shoot.
