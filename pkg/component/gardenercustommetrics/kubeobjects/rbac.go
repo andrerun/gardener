@@ -98,12 +98,7 @@ func makeClusterRole() *rbacv1.ClusterRole {
 		Rules: []rbacv1.PolicyRule{
 			{
 				APIGroups: []string{""},
-				Resources: []string{"pods"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"secrets"},
+				Resources: []string{"pods", "secrets"},
 				Verbs:     []string{"get", "list", "watch"},
 			},
 		},
