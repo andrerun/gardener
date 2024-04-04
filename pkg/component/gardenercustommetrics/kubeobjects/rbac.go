@@ -19,14 +19,14 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func makeEndpointEditorRole(namespace string) *rbacv1.Role {
-	role := &rbacv1.Role{
+func makeRole(namespace string) *rbacv1.Role {
+	return &rbacv1.Role{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "rbac.authorization.k8s.io/v1",
 			Kind:       "ClusterRole",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics--endpoint-editor",
+			Name:      "gardener-custom-metrics",
 			Namespace: namespace,
 		},
 		Rules: []rbacv1.PolicyRule{
@@ -41,26 +41,52 @@ func makeEndpointEditorRole(namespace string) *rbacv1.Role {
 				ResourceNames: []string{"gardener-custom-metrics"},
 				Verbs:         []string{"get", "update"},
 			},
+			{
+				APIGroups: []string{"coordination.k8s.io"},
+				Resources: []string{"leases"},
+				Verbs: []string{
+					"create",
+				},
+			},
+			{
+				APIGroups:     []string{"coordination.k8s.io"},
+				Resources:     []string{"leases"},
+				ResourceNames: []string{"gardener-custom-metrics-leader-election"},
+				Verbs: []string{
+					"get",
+					"watch",
+					"update",
+				},
+			},
+			{
+				APIGroups: []string{""},
+				Resources: []string{"events"},
+				Verbs: []string{
+					"create",
+					"get",
+					"list",
+					"watch",
+					"patch",
+				},
+			},
 		},
 	}
-
-	return role
 }
 
-func makeEndpointEditorRoleBinding(namespace string) *rbacv1.RoleBinding {
+func makeRoleBinding(namespace string) *rbacv1.RoleBinding {
 	return &rbacv1.RoleBinding{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "rbac.authorization.k8s.io/v1",
 			Kind:       "RoleBinding",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics--endpoint-editor",
+			Name:      "gardener-custom-metrics",
 			Namespace: namespace,
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "Role",
-			Name:     "gardener-custom-metrics--endpoint-editor",
+			Name:     "gardener-custom-metrics",
 		},
 		Subjects: []rbacv1.Subject{
 			{
@@ -72,14 +98,14 @@ func makeEndpointEditorRoleBinding(namespace string) *rbacv1.RoleBinding {
 	}
 }
 
-func makeShootReaderClusterRole() *rbacv1.ClusterRole {
-	clusterRole := &rbacv1.ClusterRole{
+func makeClusterRole() *rbacv1.ClusterRole {
+	return &rbacv1.ClusterRole{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "rbac.authorization.k8s.io/v1",
 			Kind:       "ClusterRole",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "gardener-custom-metrics--shoot-reader",
+			Name: "gardener-custom-metrics",
 		},
 		Rules: []rbacv1.PolicyRule{
 			{
@@ -94,23 +120,21 @@ func makeShootReaderClusterRole() *rbacv1.ClusterRole {
 			},
 		},
 	}
-
-	return clusterRole
 }
 
-func makeShootReaderClusterRoleBinding(namespace string) *rbacv1.ClusterRoleBinding {
+func makeClusterRoleBinding(namespace string) *rbacv1.ClusterRoleBinding {
 	return &rbacv1.ClusterRoleBinding{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: "rbac.authorization.k8s.io/v1",
 			Kind:       "ClusterRoleBinding",
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name: "gardener-custom-metrics--shoot-reader",
+			Name: "gardener-custom-metrics",
 		},
 		RoleRef: rbacv1.RoleRef{
 			APIGroup: "rbac.authorization.k8s.io",
 			Kind:     "ClusterRole",
-			Name:     "gardener-custom-metrics--shoot-reader",
+			Name:     "gardener-custom-metrics",
 		},
 		Subjects: []rbacv1.Subject{
 			{
@@ -121,96 +145,25 @@ func makeShootReaderClusterRoleBinding(namespace string) *rbacv1.ClusterRoleBind
 		},
 	}
 }
-
-func makeLeaderElectorRole(namespace string) *rbacv1.Role {
-	role := &rbacv1.Role{
-		TypeMeta: metav1.TypeMeta{
-			APIVersion: "rbac.authorization.k8s.io/v1",
-			Kind:       "Role",
-		},
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics--leader-elector",
-			Namespace: namespace,
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{"coordination.k8s.io"},
-				Resources: []string{"leases"},
-				Verbs: []string{
-					"get",
-					"list",
-					"watch",
-					"create",
-					"update",
-					"patch",
-					"delete",
-					"deletecollection",
-				},
-			},
-			{
-				APIGroups: []string{""},
-				Resources: []string{"events"},
-				Verbs: []string{
-					"get",
-					"list",
-					"watch",
-					"create",
-				},
-			},
-		},
-	}
-
-	return role
-}
-
-func makeLeaderElectorRoleBinding(namespace string) *rbacv1.RoleBinding {
-	// Create a new RoleBinding object
-	roleBinding := &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics--leader-elector",
-			Namespace: namespace,
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     "gardener-custom-metrics--leader-elector",
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      "gardener-custom-metrics",
-				Namespace: namespace,
-			},
-		},
-	}
-
-	return roleBinding
-}
-
-//#region Bindings to externally defined roles
 
 func makeAuthDelegatorClusterRoleBinding(namespace string) *rbacv1.ClusterRoleBinding {
-	roleRef := rbacv1.RoleRef{
-		APIGroup: "rbac.authorization.k8s.io",
-		Kind:     "ClusterRole",
-		Name:     "system:auth-delegator",
-	}
-
-	subject := rbacv1.Subject{
-		Kind:      "ServiceAccount",
-		Name:      "gardener-custom-metrics",
-		Namespace: namespace,
-	}
-
-	clusterRoleBinding := &rbacv1.ClusterRoleBinding{
+	return &rbacv1.ClusterRoleBinding{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "gardener-custom-metrics--system:auth-delegator",
 		},
-		RoleRef:  roleRef,
-		Subjects: []rbacv1.Subject{subject},
+		RoleRef: rbacv1.RoleRef{
+			APIGroup: "rbac.authorization.k8s.io",
+			Kind:     "ClusterRole",
+			Name:     "system:auth-delegator",
+		},
+		Subjects: []rbacv1.Subject{
+			{
+				Kind:      "ServiceAccount",
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+			},
+		},
 	}
-
-	return clusterRoleBinding
 }
 
 func makeAuthReaderRoleBinding(namespace string) *rbacv1.RoleBinding {
@@ -233,5 +186,3 @@ func makeAuthReaderRoleBinding(namespace string) *rbacv1.RoleBinding {
 		},
 	}
 }
-
-//#endregion Bindings to externally defined roles

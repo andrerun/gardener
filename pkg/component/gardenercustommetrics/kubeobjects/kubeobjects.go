@@ -30,12 +30,10 @@ func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, se
 
 	return registry.AddAllAndSerialize(
 		makeServiceAccount(namespace),
-		makeEndpointEditorRole(namespace),
-		makeEndpointEditorRoleBinding(namespace),
-		makeShootReaderClusterRole(),
-		makeShootReaderClusterRoleBinding(namespace),
-		makeLeaderElectorRole(namespace),
-		makeLeaderElectorRoleBinding(namespace),
+		makeRole(namespace),
+		makeRoleBinding(namespace),
+		makeClusterRole(),
+		makeClusterRoleBinding(namespace),
 		makeAuthDelegatorClusterRoleBinding(namespace),
 		makeAuthReaderRoleBinding(namespace),
 		makeDeployment(deploymentName, namespace, containerImageName, serverSecretName),
