@@ -315,12 +315,8 @@ spec:
         - mountPath: /var/run/secrets/gardener.cloud/tls
           name: gardener-custom-metrics-tls
           readOnly: true
-      dnsPolicy: ClusterFirst
       priorityClassName: gardener-system-700
-      restartPolicy: Always
-      schedulerName: default-scheduler
       serviceAccountName: gardener-custom-metrics
-      terminationGracePeriodSeconds: 30
       volumes:
       - name: gardener-custom-metrics-tls
         secret:

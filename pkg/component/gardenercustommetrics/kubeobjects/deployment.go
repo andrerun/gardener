@@ -113,12 +113,8 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							},
 						},
 					},
-					DNSPolicy:                     corev1.DNSClusterFirst,
-					PriorityClassName:             "gardener-system-700",
-					RestartPolicy:                 corev1.RestartPolicyAlways,
-					SchedulerName:                 "default-scheduler",
-					ServiceAccountName:            "gardener-custom-metrics",
-					TerminationGracePeriodSeconds: ptr.To[int64](30),
+					PriorityClassName:  "gardener-system-700",
+					ServiceAccountName: "gardener-custom-metrics",
 					Volumes: []corev1.Volume{
 						{
 							Name: "gardener-custom-metrics-tls",
