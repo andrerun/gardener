@@ -41,15 +41,22 @@ const ComponentName = componentBaseName
 // registering as APIService at the custom metrics extension point of the seed kube-apiserver.
 // For information about individual fields, see the NewGardenerCustomMetrics function.
 type GardenerCustomMetrics struct {
-	namespaceName      string
-	containerImageName string
-	isEnabled          bool
-	runtimeVersion     *semver.Version
-
+	namespaceName  string
+	isEnabled      bool
 	seedClient     client.Client
 	secretsManager secretsmanager.Interface
 
+	values Values
+
 	testIsolation gardenerCustomMetricsTestIsolation // Provides indirections necessary to isolate the unit during tests
+}
+
+// Values is a set of configuration values for the GardenerCustomMetrics component.
+type Values struct {
+	// Image is the container image.
+	Image string
+	// KubernetesVersion is the version of the runtime cluster.
+	KubernetesVersion *semver.Version
 }
 
 // NewGardenerCustomMetrics creates a new GardenerCustomMetrics instance tied to a specific server connection.
@@ -63,18 +70,17 @@ type GardenerCustomMetrics struct {
 // secretsManager is used to interact with secrets on the seed.
 func NewGardenerCustomMetrics(
 	namespace string,
-	containerImageName string,
 	enabled bool,
-	runtimeVersion *semver.Version,
 	seedClient client.Client,
-	secretsManager secretsmanager.Interface) *GardenerCustomMetrics {
+	secretsManager secretsmanager.Interface,
+	values Values) *GardenerCustomMetrics {
 	return &GardenerCustomMetrics{
-		namespaceName:      namespace,
-		containerImageName: containerImageName,
-		isEnabled:          enabled,
-		runtimeVersion:     runtimeVersion,
-		seedClient:         seedClient,
-		secretsManager:     secretsManager,
+		namespaceName:  namespace,
+		isEnabled:      enabled,
+		seedClient:     seedClient,
+		secretsManager: secretsManager,
+
+		values: values,
 
 		testIsolation: gardenerCustomMetricsTestIsolation{
 			CreateForSeed: managedresources.CreateForSeed,
@@ -109,7 +115,7 @@ func (gcmx *GardenerCustomMetrics) Deploy(ctx context.Context) error {
 	}
 
 	kubeObjects, err := kubeobjects.GetKubeObjectsAsYamlBytes(
-		deploymentName, gcmx.namespaceName, gcmx.containerImageName, serverCertificateSecret.Name, gcmx.runtimeVersion)
+		deploymentName, gcmx.namespaceName, gcmx.values.Image, serverCertificateSecret.Name, gcmx.values.KubernetesVersion)
 	if err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to create the K8s object definitions which describe the individual "+

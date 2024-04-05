@@ -28,7 +28,7 @@ const gcmxBaseName = "gardener-custom-metrics"
 // GetKubeObjectsAsYamlBytes returns the YAML definitions for all k8s objects necessary to materialise the GCMx component.
 // In the resulting map, each object is placed under a key which represents its identity in a format appropriate for use
 // as key in map-structured k8s objects, such as Secrets and ConfigMaps.
-func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, serverSecretName string, runtimeVersion *semver.Version) (map[string][]byte, error) {
+func GetKubeObjectsAsYamlBytes(deploymentName, namespace, image, serverSecretName string, kubernetesVersion *semver.Version) (map[string][]byte, error) {
 	registry := managedresources.NewRegistry(kubernetes.ShootScheme, kubernetes.ShootCodec, kubernetes.ShootSerializer)
 
 	return registry.AddAllAndSerialize(
@@ -39,10 +39,10 @@ func GetKubeObjectsAsYamlBytes(deploymentName, namespace, containerImageName, se
 		makeClusterRoleBinding(namespace),
 		makeAuthDelegatorClusterRoleBinding(namespace),
 		makeAuthReaderRoleBinding(namespace),
-		makeDeployment(deploymentName, namespace, containerImageName, serverSecretName),
+		makeDeployment(deploymentName, namespace, image, serverSecretName),
 		makeService(namespace),
 		makeAPIService(namespace),
-		makePDB(namespace, runtimeVersion),
+		makePDB(namespace, kubernetesVersion),
 		makeVPA(namespace),
 	)
 }

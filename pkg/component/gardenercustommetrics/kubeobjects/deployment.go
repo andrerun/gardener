@@ -115,7 +115,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							},
 						},
 					},
-					PriorityClassName:  "gardener-system-700",
+					PriorityClassName:  v1beta1constants.PriorityClassNameSeedSystem700,
 					ServiceAccountName: gcmxBaseName,
 					Volumes: []corev1.Volume{
 						{

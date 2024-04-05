@@ -23,7 +23,7 @@ import (
 	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 )
 
-func makePDB(namespace string, runtimeVersion *semver.Version) *policyv1.PodDisruptionBudget {
+func makePDB(namespace string, kubernetesVersion *semver.Version) *policyv1.PodDisruptionBudget {
 	labels := map[string]string{
 		"gardener.cloud/role": gcmxBaseName,
 	}
@@ -47,7 +47,7 @@ func makePDB(namespace string, runtimeVersion *semver.Version) *policyv1.PodDisr
 		},
 	}
 
-	kubernetesutils.SetAlwaysAllowEviction(pdb, runtimeVersion)
+	kubernetesutils.SetAlwaysAllowEviction(pdb, kubernetesVersion)
 
 	return pdb
 }

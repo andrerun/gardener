@@ -65,7 +65,11 @@ var _ = Describe("GardenerCustomMetrics", func() {
 		newGcmx = func(isEnabled bool) (*GardenerCustomMetrics, client.Client, secretsmanager.Interface, *testBehaviorCapture) {
 			var seedClient client.Client = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
 			var fakeSecretsManager secretsmanager.Interface = fakesecretsmanager.New(seedClient, namespaceName)
-			gcmx := NewGardenerCustomMetrics(namespaceName, imageName, isEnabled, semver.MustParse("1.26.1"), seedClient, fakeSecretsManager)
+			values := Values{
+				Image:             imageName,
+				KubernetesVersion: semver.MustParse("1.26.1"),
+			}
+			gcmx := NewGardenerCustomMetrics(namespaceName, isEnabled, seedClient, fakeSecretsManager, values)
 			capture := &testBehaviorCapture{}
 			// We isolate the deployment workflow at the CreateForSeed() level, because that point offers a
 			// convenient, declarative representation (deployed objects YAML)
