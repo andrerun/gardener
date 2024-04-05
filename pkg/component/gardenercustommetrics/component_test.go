@@ -109,36 +109,36 @@ var _ = Describe("GardenerCustomMetrics", func() {
 		// Otherwise, returns the index of the first different character.
 		//
 		// The string part of the result is a human-readable explanation of the nature of the first difference, if one is found.
-		strdiff = func(s1, s2 string) (int, string) {
-			minLen := len(s1)
-			if len(s2) < minLen {
-				minLen = len(s2)
+		strdiff = func(expected, actual string) (int, string) {
+			minLen := len(expected)
+			if len(actual) < minLen {
+				minLen = len(actual)
 			}
 
 			for i := 0; i < minLen; i++ {
-				if s1[i] != s2[i] {
-					excerptStart := i - 40
+				if expected[i] != actual[i] {
+					excerptStart := i - 100
 					if excerptStart < 0 {
 						excerptStart = 0
 					}
 
-					excerptEnd := i + 40
+					excerptEnd := i + 100
 					if excerptEnd > minLen {
 						excerptEnd = minLen
 					}
 
-					excerpt1 := s1[excerptStart:excerptEnd]
-					excerpt2 := s2[excerptStart:excerptEnd]
+					excerpt1 := expected[excerptStart:excerptEnd]
+					excerpt2 := actual[excerptStart:excerptEnd]
 
-					message := fmt.Sprintf("Difference found at index %d: '%c' vs '%c'\n", i, s1[i], s2[i])
-					message += fmt.Sprintf("excerpt1>>>%s\n", excerpt1)
-					message += fmt.Sprintf("excerpt2>>>%s\n", excerpt2)
+					message := fmt.Sprintf("Difference found at index %d: '%c' vs '%c'\n", i, expected[i], actual[i])
+					message += fmt.Sprintf("expected>>>%s\n", excerpt1)
+					message += fmt.Sprintf("actual>>>%s\n", excerpt2)
 					return i, message
 				}
 			}
 
-			if len(s1) != len(s2) {
-				return 0, fmt.Sprintf("Strings have different length: %d vs. %d", len(s1), len(s2))
+			if len(expected) != len(actual) {
+				return 0, fmt.Sprintf("Strings have different length: %d vs. %d", len(expected), len(actual))
 			}
 
 			return -1, ""
@@ -215,23 +215,6 @@ rules:
   - watch
 
 ####################################################################################################
-clusterrolebinding____gardener-custom-metrics.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gardener-custom-metrics
-subjects:
-- kind: ServiceAccount
-  name: gardener-custom-metrics
-  namespace: test-namespace
-
-####################################################################################################
 clusterrolebinding____gardener-custom-metrics--system_auth-delegator.yaml: 
 
 apiVersion: rbac.authorization.k8s.io/v1
@@ -243,6 +226,23 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: system:auth-delegator
+subjects:
+- kind: ServiceAccount
+  name: gardener-custom-metrics
+  namespace: test-namespace
+
+####################################################################################################
+clusterrolebinding____gardener-custom-metrics.yaml: 
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  creationTimestamp: null
+  name: gardener-custom-metrics
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: gardener-custom-metrics
 subjects:
 - kind: ServiceAccount
   name: gardener-custom-metrics
