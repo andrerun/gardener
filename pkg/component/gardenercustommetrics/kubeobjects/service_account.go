@@ -23,7 +23,7 @@ import (
 func makeServiceAccount(namespace string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics",
+			Name:      gcmxBaseName,
 			Namespace: namespace,
 		},
 		AutomountServiceAccountToken: ptr.To(false),

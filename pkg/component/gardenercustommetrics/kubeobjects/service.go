@@ -27,7 +27,7 @@ func makeService(namespace string) *corev1.Service {
 	//directing all traffic to the leader.
 	return &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics",
+			Name:      gcmxBaseName,
 			Namespace: namespace,
 			Annotations: map[string]string{
 				resourcesv1alpha1.NetworkingFromWorldToPorts: `[{"protocol":"TCP","port":6443}]`,

@@ -25,19 +25,19 @@ import (
 
 func makePDB(namespace string, runtimeVersion *semver.Version) *policyv1.PodDisruptionBudget {
 	labels := map[string]string{
-		"gardener.cloud/role": "gardener-custom-metrics",
+		"gardener.cloud/role": gcmxBaseName,
 	}
 
 	selector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"app":                 "gardener-custom-metrics",
-			"gardener.cloud/role": "gardener-custom-metrics",
+			"app":                 gcmxBaseName,
+			"gardener.cloud/role": gcmxBaseName,
 		},
 	}
 
 	pdb := &policyv1.PodDisruptionBudget{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics",
+			Name:      gcmxBaseName,
 			Namespace: namespace,
 			Labels:    labels,
 		},

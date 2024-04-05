@@ -26,7 +26,7 @@ func makeVPA(namespace string) *vpaautoscalingv1.VerticalPodAutoscaler {
 	requestsOnlyAsLvalue := vpaautoscalingv1.ContainerControlledValuesRequestsOnly
 	return &vpaautoscalingv1.VerticalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "gardener-custom-metrics",
+			Name:      gcmxBaseName,
 			Namespace: namespace,
 			Labels: map[string]string{
 				"role": "gardener-custom-metrics-vpa",
@@ -36,12 +36,12 @@ func makeVPA(namespace string) *vpaautoscalingv1.VerticalPodAutoscaler {
 			TargetRef: &autoscalingv1.CrossVersionObjectReference{
 				APIVersion: "apps/v1",
 				Kind:       "Deployment",
-				Name:       "gardener-custom-metrics",
+				Name:       gcmxBaseName,
 			},
 			ResourcePolicy: &vpaautoscalingv1.PodResourcePolicy{
 				ContainerPolicies: []vpaautoscalingv1.ContainerResourcePolicy{
 					{
-						ContainerName:    "gardener-custom-metrics",
+						ContainerName:    gcmxBaseName,
 						ControlledValues: &requestsOnlyAsLvalue,
 						MinAllowed: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("10Mi"),

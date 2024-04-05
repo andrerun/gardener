@@ -17,10 +17,13 @@ package kubeobjects
 
 import (
 	"github.com/Masterminds/semver/v3"
-
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
 )
+
+// For all the GCMx elements, of which there is exactly one per GCMx instance (e.g. deployment, service, service account),
+// we tend to use the same name. That here is the name.
+const gcmxBaseName = "gardener-custom-metrics"
 
 // GetKubeObjectsAsYamlBytes returns the YAML definitions for all k8s objects necessary to materialise the GCMx component.
 // In the resulting map, each object is placed under a key which represents its identity in a format appropriate for use

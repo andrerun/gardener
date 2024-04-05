@@ -27,7 +27,7 @@ func makeAPIService(namespace string) *apiregistrationv1.APIService {
 		},
 		Spec: apiregistrationv1.APIServiceSpec{
 			Service: &apiregistrationv1.ServiceReference{
-				Name:      "gardener-custom-metrics",
+				Name:      gcmxBaseName,
 				Namespace: namespace,
 				Port:      ptr.To[int32](443),
 			},

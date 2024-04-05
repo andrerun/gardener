@@ -15,6 +15,8 @@
 package kubeobjects
 
 import (
+	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
+	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,11 +30,11 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			Name:      deploymentName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				"app": "gardener-custom-metrics",
+				"app": gcmxBaseName,
 				// The actual availability requirement of gardener-custom-metrics is closer to the "controller"
 				// availability level (even less, actually). The value below is set to "server" solely to satisfy
 				// the requirement for consistency with existing components.
-				"high-availability-config.resources.gardener.cloud/type": "server",
+				resourcesv1alpha1.HighAvailabilityConfigType: "server",
 			},
 		},
 		Spec: appsv1.DeploymentSpec{
@@ -40,17 +42,17 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			RevisionHistoryLimit: ptr.To[int32](2),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app":                 "gardener-custom-metrics",
-					"gardener.cloud/role": "gardener-custom-metrics",
+					"app":                       gcmxBaseName,
+					v1beta1constants.GardenRole: gcmxBaseName,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":                              "gardener-custom-metrics",
-						"gardener.cloud/role":              "gardener-custom-metrics",
-						"networking.gardener.cloud/to-dns": "allowed",
-						"networking.gardener.cloud/to-runtime-apiserver":                           "allowed",
+						"app":                                    gcmxBaseName,
+						v1beta1constants.GardenRole:              gcmxBaseName,
+						v1beta1constants.LabelNetworkPolicyToDNS: "allowed",
+						v1beta1constants.LabelNetworkPolicyToRuntimeAPIServer:                      "allowed",
 						"networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443": "allowed",
 					},
 				},
@@ -88,7 +90,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 							},
 							Image:           containerImageName,
 							ImagePullPolicy: corev1.PullIfNotPresent,
-							Name:            "gardener-custom-metrics",
+							Name:            gcmxBaseName,
 							Ports: []corev1.ContainerPort{
 								{
 									ContainerPort: 6443,
@@ -114,7 +116,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 						},
 					},
 					PriorityClassName:  "gardener-system-700",
-					ServiceAccountName: "gardener-custom-metrics",
+					ServiceAccountName: gcmxBaseName,
 					Volumes: []corev1.Volume{
 						{
 							Name: "gardener-custom-metrics-tls",
