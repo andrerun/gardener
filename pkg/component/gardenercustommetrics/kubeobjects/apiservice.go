@@ -22,10 +22,6 @@ import (
 
 func makeAPIService(namespace string) *apiregistrationv1.APIService {
 	return &apiregistrationv1.APIService{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "APIService",
-			APIVersion: "apiregistration.k8s.io/v1",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "v1beta2.custom.metrics.k8s.io",
 		},

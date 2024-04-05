@@ -25,10 +25,6 @@ import (
 func makeVPA(namespace string) *vpaautoscalingv1.VerticalPodAutoscaler {
 	requestsOnlyAsLvalue := vpaautoscalingv1.ContainerControlledValuesRequestsOnly
 	return &vpaautoscalingv1.VerticalPodAutoscaler{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "VerticalPodAutoscaler",
-			APIVersion: "autoscaling.k8s.io/v1",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "gardener-custom-metrics",
 			Namespace: namespace,

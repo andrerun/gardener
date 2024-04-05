@@ -26,10 +26,6 @@ func makeService(namespace string) *corev1.Service {
 	//Endpoint management is instead done by the gardener-custom-metrics leader instance, which ensures a single endpoint,
 	//directing all traffic to the leader.
 	return &corev1.Service{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "Service",
-			APIVersion: "v1",
-		},
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "gardener-custom-metrics",
 			Namespace: namespace,
