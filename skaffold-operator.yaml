@@ -69,6 +69,8 @@ build:
             - pkg/client/kubernetes/clientmap/keys
             - pkg/component
             - pkg/component/apiserver
+            - pkg/component/autoscaling/gardenercustommetrics
+            - pkg/component/autoscaling/gardenercustommetrics/kubeobjects
             - pkg/component/autoscaling/hvpa
             - pkg/component/autoscaling/vpa
             - pkg/component/autoscaling/vpa/constants
@@ -88,8 +90,6 @@ build:
             - pkg/component/gardener/resourcemanager
             - pkg/component/gardener/resourcemanager/constants
             - pkg/component/gardener/scheduler
-            - pkg/component/gardenercustommetrics
-            - pkg/component/gardenercustommetrics/kubeobjects
             - pkg/component/kubeapiserver/bipa
             - pkg/component/kubernetes/apiserver
             - pkg/component/kubernetes/apiserver/constants

@@ -17,6 +17,7 @@ package kubeobjects
 
 import (
 	"github.com/Masterminds/semver/v3"
+
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/managedresources"
 )
