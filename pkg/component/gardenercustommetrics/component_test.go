@@ -12,614 +12,486 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package gardenercustommetrics
+package gardenercustommetrics_test
 
 import (
 	"context"
-	"fmt"
-	"sort"
-
 	"github.com/Masterminds/semver/v3"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/types"
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	corev1 "k8s.io/api/core/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	apiregistrationv1 "k8s.io/kube-aggregator/pkg/apis/apiregistration/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
-	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
-	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
+	"github.com/gardener/gardener/pkg/component"
+	. "github.com/gardener/gardener/pkg/component/gardenercustommetrics"
+	"github.com/gardener/gardener/pkg/resourcemanager/controller/garbagecollector/references"
 	"github.com/gardener/gardener/pkg/utils/retry"
 	retryfake "github.com/gardener/gardener/pkg/utils/retry/fake"
-	secretsutils "github.com/gardener/gardener/pkg/utils/secrets"
 	secretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager"
 	fakesecretsmanager "github.com/gardener/gardener/pkg/utils/secrets/manager/fake"
 	"github.com/gardener/gardener/pkg/utils/test"
+	. "github.com/gardener/gardener/pkg/utils/test/matchers"
 )
-
-//#region Test fakes
-
-type testBehaviorCapture struct {
-	DeployedResourceYamlBytes map[string][]byte
-}
-
-// CreateForSeed is a test isolation replacement for [gardenerCustomMetricsTestIsolation.CreateForSeed]
-func (capture *testBehaviorCapture) CreateForSeed(_ context.Context, _ client.Client, _, _ string, _ bool, data map[string][]byte) error {
-	capture.DeployedResourceYamlBytes = data
-	return nil
-}
-
-//#endregion Test fakes
 
 var _ = Describe("GardenerCustomMetrics", func() {
 	const (
-		caSecretName  = "ca-seed"
-		imageName     = "test-image"
-		namespaceName = "test-namespace"
+		managedResourceName = "gardener-custom-metrics"
+
+		namespace = "some-namespace"
+		image     = "some-image:some-tag"
 	)
+
 	var (
-		//#region Helpers
-		newGcmx = func(isEnabled bool) (*GardenerCustomMetrics, client.Client, secretsmanager.Interface, *testBehaviorCapture) {
-			var seedClient client.Client = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
-			var fakeSecretsManager secretsmanager.Interface = fakesecretsmanager.New(seedClient, namespaceName)
-			gcmx := NewGardenerCustomMetrics(
-				namespaceName, imageName, isEnabled, semver.MustParse("1.26.1"), seedClient, fakeSecretsManager)
-			capture := &testBehaviorCapture{}
-			// We isolate the deployment workflow at the CreateForSeed() level, because that point offers a
-			// convenient, declarative representation (deployed objects YAML)
-			gcmx.testIsolation.CreateForSeed = capture.CreateForSeed
+		ctx               = context.Background()
+		kubernetesVersion = semver.MustParse("1.25.5")
+		c                 client.Client
+		sm                secretsmanager.Interface
+		component         component.DeployWaiter
+		consistOf         func(object ...client.Object) types.GomegaMatcher
 
-			return gcmx, seedClient, fakeSecretsManager, capture
-		}
+		managedResource       *resourcesv1alpha1.ManagedResource
+		managedResourceSecret *corev1.Secret
 
-		assertServerCertificateOnServer = func(isExpectedToExist bool, seedClient client.Client) {
-			actualServerCertificateSecret := corev1.Secret{}
-			err := seedClient.Get(
-				context.Background(),
-				client.ObjectKey{Namespace: namespaceName, Name: serverCertificateSecretName},
-				&actualServerCertificateSecret)
-
-			if isExpectedToExist {
-				ExpectWithOffset(1, err).NotTo(HaveOccurred())
-			} else {
-				ExpectWithOffset(1, err).To(HaveOccurred())
-				ExpectWithOffset(1, err.Error()).To(MatchRegexp(".*not.*found.*"))
-			}
-		}
-
-		assertNoManagedResourceOnServer = func(seedClient client.Client) {
-			mr := resourcesv1alpha1.ManagedResource{}
-			err := seedClient.Get(
-				context.Background(), client.ObjectKey{Namespace: namespaceName, Name: managedResourceName}, &mr)
-			ExpectWithOffset(1, err).To(HaveOccurred())
-			ExpectWithOffset(1, err.Error()).To(MatchRegexp(".*not.*found.*"))
-		}
-
-		createObjectOnSeed = func(obj client.Object, name string, seedClient client.Client) {
-			obj.SetNamespace(namespaceName)
-			obj.SetName(name)
-			ExpectWithOffset(1, seedClient.Create(context.Background(), obj)).To(Succeed())
-		}
-
-		// Checks two strings for equality. In case of inequality, provides explanatory message to help identify the difference.
-		// If strings are equal, returns -1.
-		// If lengths differ, returns 0.
-		// Otherwise, returns the index of the first different character.
-		//
-		// The string part of the result is a human-readable explanation of the nature of the first difference, if one is found.
-		strdiff = func(expected, actual string) (int, string) {
-			minLen := len(expected)
-			if len(actual) < minLen {
-				minLen = len(actual)
-			}
-
-			for i := 0; i < minLen; i++ {
-				if expected[i] != actual[i] {
-					excerptStart := i - 100
-					if excerptStart < 0 {
-						excerptStart = 0
-					}
-
-					excerptEnd := i + 100
-					if excerptEnd > minLen {
-						excerptEnd = minLen
-					}
-
-					excerpt1 := expected[excerptStart:excerptEnd]
-					excerpt2 := actual[excerptStart:excerptEnd]
-
-					message := fmt.Sprintf("Difference found at index %d: '%c' vs '%c'\n", i, expected[i], actual[i])
-					message += fmt.Sprintf("expected>>>%s\n", excerpt1)
-					message += fmt.Sprintf("actual>>>%s\n", excerpt2)
-					return i, message
-				}
-			}
-
-			if len(expected) != len(actual) {
-				return 0, fmt.Sprintf("Strings have different length: %d vs. %d", len(expected), len(actual))
-			}
-
-			return -1, ""
-		}
-
-		// Formats `data` as a string which supports human-readable diff. Makes understanding test failures easier.
-		// The data parameter is the same as in CreateForSeed.
-		formatKubeObjectsAsSortedText = func(data map[string][]byte) string {
-			var keys []string
-			for key := range data {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-
-			str := ""
-			for _, key := range keys {
-				str += fmt.Sprintf("%s: \n\n", key)
-				str += fmt.Sprintf("%s\n", string(data[key]))
-				str += "####################################################################################################\n"
-			}
-
-			return str
-		}
-		//#endregion Helpers
+		serviceAccount                  *corev1.ServiceAccount
+		role                            *rbacv1.Role
+		roleBinding                     *rbacv1.RoleBinding
+		clusterRole                     *rbacv1.ClusterRole
+		clusterRoleBinding              *rbacv1.ClusterRoleBinding
+		authDelegatorClusterRoleBinding *rbacv1.ClusterRoleBinding
+		authReaderRoleBinding           *rbacv1.RoleBinding
+		deployment                      *appsv1.Deployment
+		service                         *corev1.Service
+		podDisruptionBudgetFor          func(bool) *policyv1.PodDisruptionBudget
+		vpa                             *vpaautoscalingv1.VerticalPodAutoscaler
+		apiService                      *apiregistrationv1.APIService
 	)
 
-	Describe("Deploy()", func() {
-		Context("in enabled state", func() {
-			It("should deploy the correct resources to the seed", func() {
-				//#region Expected resources as bulk YAML
-				expectedResourcesAsText := `apiservice____v1beta2.custom.metrics.k8s.io.yaml: 
+	BeforeEach(func() {
+		c = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
+		sm = fakesecretsmanager.New(c, namespace)
+		component = NewGardenerCustomMetrics(namespace, image, kubernetesVersion, c, sm)
+		consistOf = NewManagedResourceConsistOfObjectsMatcher(c)
 
-apiVersion: apiregistration.k8s.io/v1
-kind: APIService
-metadata:
-  creationTimestamp: null
-  name: v1beta2.custom.metrics.k8s.io
-spec:
-  group: custom.metrics.k8s.io
-  groupPriorityMinimum: 100
-  insecureSkipTLSVerify: true
-  service:
-    name: gardener-custom-metrics
-    namespace: test-namespace
-    port: 443
-  version: v1beta2
-  versionPriority: 200
-status: {}
+		By("Create secrets managed outside of this package for whose secretsmanager.Get() will be called")
+		Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "ca-seed", Namespace: namespace}})).To(Succeed())
 
-####################################################################################################
-clusterrole____gardener-custom-metrics.yaml: 
+		managedResource = &resourcesv1alpha1.ManagedResource{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      managedResourceName,
+				Namespace: namespace,
+			},
+		}
+		managedResourceSecret = &corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "managedresource-" + managedResource.Name,
+				Namespace: namespace,
+			},
+		}
 
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - pods
-  - secrets
-  verbs:
-  - get
-  - list
-  - watch
+		serviceAccount = &corev1.ServiceAccount{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+			},
+			AutomountServiceAccountToken: ptr.To(false),
+		}
+		role = &rbacv1.Role{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+			},
+			Rules: []rbacv1.PolicyRule{
+				{
+					APIGroups: []string{""},
+					Resources: []string{"endpoints"},
+					Verbs:     []string{"create"},
+				},
+				{
+					APIGroups:     []string{""},
+					Resources:     []string{"endpoints"},
+					ResourceNames: []string{"gardener-custom-metrics"},
+					Verbs:         []string{"get", "update"},
+				},
+				{
+					APIGroups: []string{"coordination.k8s.io"},
+					Resources: []string{"leases"},
+					Verbs:     []string{"create"},
+				},
+				{
+					APIGroups:     []string{"coordination.k8s.io"},
+					Resources:     []string{"leases"},
+					ResourceNames: []string{"gardener-custom-metrics-leader-election"},
+					Verbs:         []string{"get", "watch", "update"},
+				},
+				{
+					APIGroups: []string{""},
+					Resources: []string{"events"},
+					Verbs:     []string{"create", "get", "list", "watch", "patch"},
+				},
+			},
+		}
+		roleBinding = &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "Role",
+				Name:     "gardener-custom-metrics",
+			},
+			Subjects: []rbacv1.Subject{{
+				Kind:      "ServiceAccount",
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+			}},
+		}
+		clusterRole = &rbacv1.ClusterRole{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "gardener-custom-metrics",
+			},
+			Rules: []rbacv1.PolicyRule{
+				{
+					APIGroups: []string{""},
+					Resources: []string{"pods", "secrets"},
+					Verbs:     []string{"get", "list", "watch"},
+				},
+			},
+		}
+		clusterRoleBinding = &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "gardener-custom-metrics",
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "ClusterRole",
+				Name:     "gardener-custom-metrics",
+			},
+			Subjects: []rbacv1.Subject{{
+				Kind:      "ServiceAccount",
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+			}},
+		}
+		authDelegatorClusterRoleBinding = &rbacv1.ClusterRoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "gardener-custom-metrics--system:auth-delegator",
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "ClusterRole",
+				Name:     "system:auth-delegator",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "ServiceAccount",
+					Name:      "gardener-custom-metrics",
+					Namespace: namespace,
+				},
+			},
+		}
+		authReaderRoleBinding = &rbacv1.RoleBinding{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gardener-custom-metrics--auth-reader",
+				Namespace: "kube-system",
+			},
+			RoleRef: rbacv1.RoleRef{
+				APIGroup: "rbac.authorization.k8s.io",
+				Kind:     "Role",
+				Name:     "extension-apiserver-authentication-reader",
+			},
+			Subjects: []rbacv1.Subject{
+				{
+					Kind:      "ServiceAccount",
+					Name:      "gardener-custom-metrics",
+					Namespace: namespace,
+				},
+			},
+		}
+		deployment = &appsv1.Deployment{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+				Labels: map[string]string{
+					"app": "gardener-custom-metrics",
+					"high-availability-config.resources.gardener.cloud/type": "server",
+				},
+			},
+			Spec: appsv1.DeploymentSpec{
+				Replicas:             ptr.To[int32](1),
+				RevisionHistoryLimit: ptr.To[int32](2),
+				Selector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app":                 "gardener-custom-metrics",
+						"gardener.cloud/role": "gardener-custom-metrics",
+					},
+				},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{
+						Labels: map[string]string{
+							"app":                              "gardener-custom-metrics",
+							"gardener.cloud/role":              "gardener-custom-metrics",
+							"networking.gardener.cloud/to-dns": "allowed",
+							"networking.gardener.cloud/to-runtime-apiserver":                           "allowed",
+							"networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443": "allowed",
+						},
+					},
+					Spec: corev1.PodSpec{
+						Containers: []corev1.Container{{
+							Name:            "gardener-custom-metrics",
+							Image:           image,
+							ImagePullPolicy: corev1.PullIfNotPresent,
+							Args: []string{
+								"--secure-port=6443",
+								"--tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt",
+								"--tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key",
+								"--leader-election=true",
+								"--namespace=garden",
+								"--access-ip=$(POD_IP)",
+								"--access-port=6443",
+								"--log-level=74",
+							},
+							Env: []corev1.EnvVar{
+								{
+									Name: "POD_IP",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "status.podIP",
+										},
+									},
+								},
+								{
+									Name: "LEADER_ELECTION_NAMESPACE",
+									ValueFrom: &corev1.EnvVarSource{
+										FieldRef: &corev1.ObjectFieldSelector{
+											FieldPath: "metadata.namespace",
+										},
+									},
+								},
+							},
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: 6443,
+									Name:          "metrics-server",
+									Protocol:      corev1.ProtocolTCP,
+								},
+							},
+							Resources: corev1.ResourceRequirements{
+								Requests: corev1.ResourceList{
+									corev1.ResourceCPU:    resource.MustParse("80m"),
+									corev1.ResourceMemory: resource.MustParse("200Mi"),
+								},
+							},
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									MountPath: "/var/run/secrets/gardener.cloud/tls",
+									Name:      "gardener-custom-metrics-tls",
+									ReadOnly:  true,
+								},
+							},
+						}},
+						PriorityClassName:  "gardener-system-700",
+						ServiceAccountName: "gardener-custom-metrics",
+						Volumes: []corev1.Volume{
+							{
+								Name: "gardener-custom-metrics-tls",
+								VolumeSource: corev1.VolumeSource{
+									Secret: &corev1.SecretVolumeSource{
+										SecretName: "gardener-custom-metrics-tls",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		}
+		service = &corev1.Service{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+				Annotations: map[string]string{
+					"networking.resources.gardener.cloud/from-world-to-ports": `[{"protocol":"TCP","port":6443}]`,
+				},
+			},
+			Spec: corev1.ServiceSpec{
+				Ports: []corev1.ServicePort{
+					{
+						Port:       443,
+						Protocol:   corev1.ProtocolTCP,
+						TargetPort: intstr.FromInt32(6443),
+					},
+				},
+				PublishNotReadyAddresses: true,
+				SessionAffinity:          corev1.ServiceAffinityNone,
+				Type:                     corev1.ServiceTypeClusterIP,
+			},
+		}
+		vpa = &vpaautoscalingv1.VerticalPodAutoscaler{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "gardener-custom-metrics",
+				Namespace: namespace,
+				Labels: map[string]string{
+					"role": "gardener-custom-metrics-vpa",
+				},
+			},
+			Spec: vpaautoscalingv1.VerticalPodAutoscalerSpec{
+				TargetRef: &autoscalingv1.CrossVersionObjectReference{
+					APIVersion: "apps/v1",
+					Kind:       "Deployment",
+					Name:       "gardener-custom-metrics",
+				},
+				ResourcePolicy: &vpaautoscalingv1.PodResourcePolicy{
+					ContainerPolicies: []vpaautoscalingv1.ContainerResourcePolicy{
+						{
+							ContainerName:    "gardener-custom-metrics",
+							ControlledValues: ptr.To(vpaautoscalingv1.ContainerControlledValuesRequestsOnly),
+							MinAllowed: corev1.ResourceList{
+								corev1.ResourceMemory: resource.MustParse("10Mi"),
+							},
+						},
+					},
+				},
+			},
+		}
+		apiService = &apiregistrationv1.APIService{
+			ObjectMeta: metav1.ObjectMeta{
+				Name: "v1beta2.custom.metrics.k8s.io",
+			},
+			Spec: apiregistrationv1.APIServiceSpec{
+				Service: &apiregistrationv1.ServiceReference{
+					Name:      "gardener-custom-metrics",
+					Namespace: namespace,
+					Port:      ptr.To[int32](443),
+				},
+				Group:                 "custom.metrics.k8s.io",
+				Version:               "v1beta2",
+				GroupPriorityMinimum:  100,
+				VersionPriority:       200,
+				InsecureSkipTLSVerify: true,
+			},
+		}
+		podDisruptionBudgetFor = func(k8sVersionGreaterEquals126 bool) *policyv1.PodDisruptionBudget {
+			pdb := &policyv1.PodDisruptionBudget{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "gardener-custom-metrics",
+					Namespace: namespace,
+					Labels: map[string]string{
+						"gardener.cloud/role": "gardener-custom-metrics",
+					},
+				},
+				Spec: policyv1.PodDisruptionBudgetSpec{
+					MaxUnavailable: &intstr.IntOrString{Type: intstr.Int, IntVal: 1},
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app":                 "gardener-custom-metrics",
+							"gardener.cloud/role": "gardener-custom-metrics",
+						},
+					},
+				},
+			}
 
-####################################################################################################
-clusterrolebinding____gardener-custom-metrics--system_auth-delegator.yaml: 
+			if k8sVersionGreaterEquals126 {
+				pdb.Spec.UnhealthyPodEvictionPolicy = ptr.To(policyv1.AlwaysAllow)
+			}
 
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics--system:auth-delegator
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:auth-delegator
-subjects:
-- kind: ServiceAccount
-  name: gardener-custom-metrics
-  namespace: test-namespace
+			return pdb
+		}
 
-####################################################################################################
-clusterrolebinding____gardener-custom-metrics.yaml: 
+	})
 
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: gardener-custom-metrics
-subjects:
-- kind: ServiceAccount
-  name: gardener-custom-metrics
-  namespace: test-namespace
+	Describe("#Deploy", func() {
+		var expectedObjects []client.Object
 
-####################################################################################################
-deployment__test-namespace__gardener-custom-metrics.yaml: 
+		JustBeforeEach(func() {
+			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
 
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  creationTimestamp: null
-  labels:
-    app: gardener-custom-metrics
-    high-availability-config.resources.gardener.cloud/type: server
-  name: gardener-custom-metrics
-  namespace: test-namespace
-spec:
-  replicas: 1
-  revisionHistoryLimit: 2
-  selector:
-    matchLabels:
-      app: gardener-custom-metrics
-      gardener.cloud/role: gardener-custom-metrics
-  strategy: {}
-  template:
-    metadata:
-      creationTimestamp: null
-      labels:
-        app: gardener-custom-metrics
-        gardener.cloud/role: gardener-custom-metrics
-        networking.gardener.cloud/to-dns: allowed
-        networking.gardener.cloud/to-runtime-apiserver: allowed
-        networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443: allowed
-    spec:
-      containers:
-      - args:
-        - --secure-port=6443
-        - --tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt
-        - --tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key
-        - --leader-election=true
-        - --namespace=garden
-        - --access-ip=$(POD_IP)
-        - --access-port=6443
-        - --log-level=74
-        env:
-        - name: POD_IP
-          valueFrom:
-            fieldRef:
-              fieldPath: status.podIP
-        - name: LEADER_ELECTION_NAMESPACE
-          valueFrom:
-            fieldRef:
-              fieldPath: metadata.namespace
-        image: test-image
-        imagePullPolicy: IfNotPresent
-        name: gardener-custom-metrics
-        ports:
-        - containerPort: 6443
-          name: metrics-server
-          protocol: TCP
-        resources:
-          requests:
-            cpu: 80m
-            memory: 200Mi
-        volumeMounts:
-        - mountPath: /var/run/secrets/gardener.cloud/tls
-          name: gardener-custom-metrics-tls
-          readOnly: true
-      priorityClassName: gardener-system-700
-      serviceAccountName: gardener-custom-metrics
-      volumes:
-      - name: gardener-custom-metrics-tls
-        secret:
-          secretName: gardener-custom-metrics-tls
-status: {}
+			Expect(component.Deploy(ctx)).To(Succeed())
 
-####################################################################################################
-poddisruptionbudget__test-namespace__gardener-custom-metrics.yaml: 
+			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(Succeed())
+			expectedMr := &resourcesv1alpha1.ManagedResource{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:            managedResourceName,
+					Namespace:       namespace,
+					Labels:          map[string]string{"gardener.cloud/role": "seed-system-component"},
+					ResourceVersion: "1",
+				},
+				Spec: resourcesv1alpha1.ManagedResourceSpec{
+					Class: ptr.To("seed"),
+					SecretRefs: []corev1.LocalObjectReference{{
+						Name: managedResource.Spec.SecretRefs[0].Name,
+					}},
+					KeepObjects: ptr.To(false),
+				},
+			}
+			utilruntime.Must(references.InjectAnnotations(expectedMr))
+			Expect(managedResource).To(DeepEqual(expectedMr))
+			expectedObjects = []client.Object{
+				serviceAccount,
+				role,
+				roleBinding,
+				clusterRole,
+				clusterRoleBinding,
+				authDelegatorClusterRoleBinding,
+				authReaderRoleBinding,
+				deployment,
+				service,
+				vpa,
+				apiService,
+			}
 
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  creationTimestamp: null
-  labels:
-    gardener.cloud/role: gardener-custom-metrics
-  name: gardener-custom-metrics
-  namespace: test-namespace
-spec:
-  maxUnavailable: 1
-  selector:
-    matchLabels:
-      app: gardener-custom-metrics
-      gardener.cloud/role: gardener-custom-metrics
-  unhealthyPodEvictionPolicy: AlwaysAllow
-status:
-  currentHealthy: 0
-  desiredHealthy: 0
-  disruptionsAllowed: 0
-  expectedPods: 0
+			managedResourceSecret.Name = managedResource.Spec.SecretRefs[0].Name
+			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(Succeed())
+			Expect(managedResourceSecret.Type).To(Equal(corev1.SecretTypeOpaque))
+			Expect(managedResourceSecret.Immutable).To(Equal(ptr.To(true)))
+			Expect(managedResourceSecret.Labels["resources.gardener.cloud/garbage-collectable-reference"]).To(Equal("true"))
+		})
 
-####################################################################################################
-role__test-namespace__gardener-custom-metrics.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics
-  namespace: test-namespace
-rules:
-- apiGroups:
-  - ""
-  resources:
-  - endpoints
-  verbs:
-  - create
-- apiGroups:
-  - ""
-  resourceNames:
-  - gardener-custom-metrics
-  resources:
-  - endpoints
-  verbs:
-  - get
-  - update
-- apiGroups:
-  - coordination.k8s.io
-  resources:
-  - leases
-  verbs:
-  - create
-- apiGroups:
-  - coordination.k8s.io
-  resourceNames:
-  - gardener-custom-metrics-leader-election
-  resources:
-  - leases
-  verbs:
-  - get
-  - watch
-  - update
-- apiGroups:
-  - ""
-  resources:
-  - events
-  verbs:
-  - create
-  - get
-  - list
-  - watch
-  - patch
-
-####################################################################################################
-rolebinding__kube-system__gardener-custom-metrics--auth-reader.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics--auth-reader
-  namespace: kube-system
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: extension-apiserver-authentication-reader
-subjects:
-- kind: ServiceAccount
-  name: gardener-custom-metrics
-  namespace: test-namespace
-
-####################################################################################################
-rolebinding__test-namespace__gardener-custom-metrics.yaml: 
-
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics
-  namespace: test-namespace
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: gardener-custom-metrics
-subjects:
-- kind: ServiceAccount
-  name: gardener-custom-metrics
-  namespace: test-namespace
-
-####################################################################################################
-service__test-namespace__gardener-custom-metrics.yaml: 
-
-apiVersion: v1
-kind: Service
-metadata:
-  annotations:
-    networking.resources.gardener.cloud/from-world-to-ports: '[{"protocol":"TCP","port":6443}]'
-  creationTimestamp: null
-  name: gardener-custom-metrics
-  namespace: test-namespace
-spec:
-  ports:
-  - port: 443
-    protocol: TCP
-    targetPort: 6443
-  publishNotReadyAddresses: true
-  sessionAffinity: None
-  type: ClusterIP
-status:
-  loadBalancer: {}
-
-####################################################################################################
-serviceaccount__test-namespace__gardener-custom-metrics.yaml: 
-
-apiVersion: v1
-automountServiceAccountToken: false
-kind: ServiceAccount
-metadata:
-  creationTimestamp: null
-  name: gardener-custom-metrics
-  namespace: test-namespace
-
-####################################################################################################
-verticalpodautoscaler__test-namespace__gardener-custom-metrics.yaml: 
-
-apiVersion: autoscaling.k8s.io/v1
-kind: VerticalPodAutoscaler
-metadata:
-  creationTimestamp: null
-  labels:
-    role: gardener-custom-metrics-vpa
-  name: gardener-custom-metrics
-  namespace: test-namespace
-spec:
-  resourcePolicy:
-    containerPolicies:
-    - containerName: gardener-custom-metrics
-      controlledValues: RequestsOnly
-      minAllowed:
-        memory: 10Mi
-  targetRef:
-    apiVersion: apps/v1
-    kind: Deployment
-    name: gardener-custom-metrics
-status: {}
-
-####################################################################################################
-`
-				//#endregion Expected resources as bulk YAML
-
-				// Arrange
-				gcmx, seedClient, _, capture := newGcmx(true)
-				createObjectOnSeed(&corev1.Secret{}, caSecretName, seedClient)
-
-				// Act
-				Expect(gcmx.Deploy(context.Background())).To(Succeed())
-
-				// Assert
-				deployedResourcesAsText := formatKubeObjectsAsSortedText(capture.DeployedResourceYamlBytes)
-				if i, msg := strdiff(expectedResourcesAsText, deployedResourcesAsText); i != -1 {
-					Fail("Deployed resources YAML differs from expected. Details:\n" + msg)
-				}
-
-				// Check if the TLS secret was created. The fake secret manager currently does not allow verifying that
-				// it was invoked with the expected parameters (even indirectly, as the created secret does not fully
-				// reflect the parameters given to the fake secret manager). So, at least check that the secret was
-				// created
-				assertServerCertificateOnServer(true, seedClient)
-			})
-
-			It("should fail if CA certificate is missing on the seed", func() {
-				// Arrange
-				gcmx, _, _, capture := newGcmx(true)
-
-				// Act
-				err := gcmx.Deploy(context.Background())
-
-				// Assert
-				Expect(err).To(HaveOccurred())
-				Expect(err.Error()).To(MatchRegexp(".*CA.*certificate.*secret.*"))
-				Expect(capture.DeployedResourceYamlBytes).To(BeNil())
+		Context("Kubernetes versions < 1.26", func() {
+			It("should successfully deploy all resources", func() {
+				expectedObjects = append(expectedObjects, podDisruptionBudgetFor(false))
+				Expect(managedResource).To(consistOf(expectedObjects...))
 			})
 		})
 
-		Context("in disabled state", func() {
-			It("should not fail if CA certificate is missing on the seed", func() {
-				// Arrange
-				gcmx, seedClient, _, _ := newGcmx(false)
-				caSecret := corev1.Secret{}
-				err := seedClient.Get(
-					context.Background(),
-					client.ObjectKey{Namespace: namespaceName, Name: caSecretName},
-					&caSecret)
-				Expect(err.Error()).To(MatchRegexp(".*not.*found.*"))
-
-				// Act
-				err = gcmx.Deploy(context.Background())
-
-				// Assert
-				Expect(err).To(Succeed())
+		Context("Kubernetes versions >= 1.26", func() {
+			BeforeEach(func() {
+				kubernetesVersion = semver.MustParse("1.26.2")
+				component = NewGardenerCustomMetrics(namespace, image, kubernetesVersion, c, sm)
 			})
 
-			It("should not deploy any resources to the seed", func() {
-				// Arrange
-				gcmx, seedClient, _, capture := newGcmx(false)
-
-				// Act
-				Expect(gcmx.Deploy(context.Background())).To(Succeed())
-
-				// Assert
-				Expect(capture.DeployedResourceYamlBytes).To(BeNil())
-				assertServerCertificateOnServer(false, seedClient)
-			})
-
-			It("should destroy the resources on the seed", func() {
-				// Arrange
-				gcmx, seedClient, secretsManager, capture := newGcmx(false)
-				_, err := secretsManager.Generate(
-					context.Background(),
-					&secretsutils.CertificateSecretConfig{
-						Name:                        serverCertificateSecretName,
-						CommonName:                  fmt.Sprintf("%s.%s.svc", serviceName, gcmx.namespaceName),
-						DNSNames:                    kubernetesutils.DNSNamesForService(serviceName, gcmx.namespaceName),
-						CertType:                    secretsutils.ServerCert,
-						SkipPublishingCACertificate: true,
-					},
-					secretsmanager.SignedByCA(v1beta1constants.SecretNameCASeed, secretsmanager.UseCurrentCA),
-					secretsmanager.Rotate(secretsmanager.InPlace))
-				Expect(err).NotTo(HaveOccurred())
-				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
-
-				// Act
-				Expect(gcmx.Deploy(context.Background())).To(Succeed())
-
-				// Assert
-				assertNoManagedResourceOnServer(seedClient)
-				Expect(capture.DeployedResourceYamlBytes).To(BeNil())
-				// Don't verify TLS secret deletion for now. The fake secrets manager currently does not implement cleanup.
+			It("should successfully deploy all resources", func() {
+				expectedObjects = append(expectedObjects, podDisruptionBudgetFor(true))
+				Expect(managedResource).To(consistOf(expectedObjects...))
 			})
 		})
 	})
 
-	Describe("Destroy()", func() {
-		Context("in enabled state", func() {
-			It("should destroy the resources on the seed", func() {
-				// Arrange
-				gcmx, seedClient, _, capture := newGcmx(true)
-				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName, seedClient)
-				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
+	Describe("#Destroy", func() {
+		It("should successfully destroy all resources", func() {
+			Expect(c.Create(ctx, managedResource)).To(Succeed())
+			Expect(c.Create(ctx, managedResourceSecret)).To(Succeed())
 
-				// Act
-				Expect(gcmx.Destroy(context.Background())).To(Succeed())
+			Expect(component.Destroy(ctx)).To(Succeed())
 
-				// Assert
-				assertNoManagedResourceOnServer(seedClient)
-				Expect(capture.DeployedResourceYamlBytes).To(BeNil())
-				// Don't verify TLS secret deletion for now. The fake secrets manager currently does not implement cleanup.
-			})
-
-			It("should not fail if resources are missing on the seed", func() {
-				// Arrange
-				gcmx, _, _, _ := newGcmx(true)
-
-				// Act and assert
-				Expect(gcmx.Destroy(context.Background())).To(Succeed())
-			})
-		})
-
-		Context("in disabled state", func() {
-			It("should destroy the resources on the seed", func() {
-				// Arrange
-				gcmx, seedClient, _, capture := newGcmx(false)
-				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName, seedClient)
-				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
-
-				// Act
-				Expect(gcmx.Destroy(context.Background())).To(Succeed())
-
-				// Assert
-				assertNoManagedResourceOnServer(seedClient)
-				Expect(capture.DeployedResourceYamlBytes).To(BeNil())
-				// Don't verify TLS secret deletion for now. The fake secrets manager currently does not implement cleanup.
-			})
+			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
+			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(BeNotFoundError())
 		})
 	})
 
@@ -641,24 +513,18 @@ status: {}
 			resetVars()
 		})
 
-		Describe("Wait()", func() {
+		Describe("#Wait", func() {
 			It("should fail when the ManagedResource is missing", func() {
-				// Arrange
-				gcmx, _, _, _ := newGcmx(true)
-
-				// Act
-				Expect(gcmx.Wait(context.Background())).To(MatchError(ContainSubstring("not found")))
+				Expect(component.Wait(ctx)).To(MatchError(ContainSubstring("not found")))
 			})
 
 			It("should fail because the ManagedResource doesn't become healthy", func() {
-				// Arrange
-				gcmx, seedClient, _, _ := newGcmx(true)
 				fakeOps.MaxAttempts = 2
 
-				Expect(seedClient.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
+				Expect(c.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       managedResourceName,
-						Namespace:  namespaceName,
+						Namespace:  namespace,
 						Generation: 1,
 					},
 					Status: resourcesv1alpha1.ManagedResourceStatus{
@@ -676,19 +542,16 @@ status: {}
 					},
 				})).To(Succeed())
 
-				// Act and assert
-				Expect(gcmx.Wait(context.Background())).To(MatchError(ContainSubstring("is not healthy")))
+				Expect(component.Wait(context.Background())).To(MatchError(ContainSubstring("is not healthy")))
 			})
 
 			It("should successfully wait for the managed resource to become healthy", func() {
-				// Arrange
-				gcmx, seedClient, _, _ := newGcmx(true)
 				fakeOps.MaxAttempts = 2
 
-				Expect(seedClient.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
+				Expect(c.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:       managedResourceName,
-						Namespace:  namespaceName,
+						Namespace:  namespace,
 						Generation: 1,
 					},
 					Status: resourcesv1alpha1.ManagedResourceStatus{
@@ -706,27 +569,28 @@ status: {}
 					},
 				})).To(Succeed())
 
-				// Act
-				Expect(gcmx.Wait(context.Background())).To(Succeed())
+				Expect(component.Wait(context.Background())).To(Succeed())
 			})
 		})
 
 		Describe("WaitCleanup()", func() {
 			It("should fail when the wait for the managed resource deletion times out", func() {
-				// Arrange
-				gcmx, seedClient, _, _ := newGcmx(true)
-				createObjectOnSeed(&corev1.Secret{}, serverCertificateSecretName, seedClient)
-				createObjectOnSeed(&resourcesv1alpha1.ManagedResource{}, managedResourceName, seedClient)
 				fakeOps.MaxAttempts = 2
 
-				// Act
-				Expect(gcmx.WaitCleanup(context.Background())).To(MatchError(ContainSubstring("still exists")))
+				managedResource := &resourcesv1alpha1.ManagedResource{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      managedResourceName,
+						Namespace: namespace,
+					},
+				}
+
+				Expect(c.Create(ctx, managedResource)).To(Succeed())
+
+				Expect(component.WaitCleanup(ctx)).To(MatchError(ContainSubstring("still exists")))
 			})
 
 			It("should not return an error when it's already removed", func() {
-				// Arrange
-				gcmx, _, _, _ := newGcmx(true)
-				Expect(gcmx.WaitCleanup(context.Background())).To(Succeed())
+				Expect(component.WaitCleanup(ctx)).To(Succeed())
 			})
 		})
 	})
