@@ -35,7 +35,6 @@ func makeService(namespace string) *corev1.Service {
 			},
 		},
 		Spec: corev1.ServiceSpec{
-			IPFamilies: []corev1.IPFamily{corev1.IPv4Protocol},
 			Ports: []corev1.ServicePort{
 				{
 					Port:       443,

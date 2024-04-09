@@ -20,10 +20,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	"k8s.io/utils/ptr"
 )
 
 func makeVPA(namespace string) *vpaautoscalingv1.VerticalPodAutoscaler {
-	requestsOnlyAsLvalue := vpaautoscalingv1.ContainerControlledValuesRequestsOnly
 	return &vpaautoscalingv1.VerticalPodAutoscaler{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      gcmxBaseName,
@@ -42,7 +42,7 @@ func makeVPA(namespace string) *vpaautoscalingv1.VerticalPodAutoscaler {
 				ContainerPolicies: []vpaautoscalingv1.ContainerResourcePolicy{
 					{
 						ContainerName:    gcmxBaseName,
-						ControlledValues: &requestsOnlyAsLvalue,
+						ControlledValues: ptr.To(vpaautoscalingv1.ContainerControlledValuesRequestsOnly),
 						MinAllowed: corev1.ResourceList{
 							corev1.ResourceMemory: resource.MustParse("10Mi"),
 						},

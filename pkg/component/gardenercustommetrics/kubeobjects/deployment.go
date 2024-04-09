@@ -59,8 +59,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{
 						{
-							Command: []string{
-								"./gardener-custom-metrics",
+							Args: []string{
 								"--secure-port=6443",
 								"--tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt",
 								"--tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key",
@@ -104,8 +103,6 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 									corev1.ResourceMemory: resource.MustParse("200Mi"),
 								},
 							},
-							TerminationMessagePath:   "/dev/termination-log",
-							TerminationMessagePolicy: corev1.TerminationMessageReadFile,
 							VolumeMounts: []corev1.VolumeMount{
 								{
 									MountPath: "/var/run/secrets/gardener.cloud/tls",

@@ -40,9 +40,7 @@ func makeRole(namespace string) *rbacv1.Role {
 			{
 				APIGroups: []string{"coordination.k8s.io"},
 				Resources: []string{"leases"},
-				Verbs: []string{
-					"create",
-				},
+				Verbs:     []string{"create"},
 			},
 			{
 				APIGroups:     []string{"coordination.k8s.io"},

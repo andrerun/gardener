@@ -65,11 +65,8 @@ var _ = Describe("GardenerCustomMetrics", func() {
 		newGcmx = func(isEnabled bool) (*GardenerCustomMetrics, client.Client, secretsmanager.Interface, *testBehaviorCapture) {
 			var seedClient client.Client = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
 			var fakeSecretsManager secretsmanager.Interface = fakesecretsmanager.New(seedClient, namespaceName)
-			values := Values{
-				Image:             imageName,
-				KubernetesVersion: semver.MustParse("1.26.1"),
-			}
-			gcmx := NewGardenerCustomMetrics(namespaceName, isEnabled, seedClient, fakeSecretsManager, values)
+			gcmx := NewGardenerCustomMetrics(
+				namespaceName, imageName, isEnabled, semver.MustParse("1.26.1"), seedClient, fakeSecretsManager)
 			capture := &testBehaviorCapture{}
 			// We isolate the deployment workflow at the CreateForSeed() level, because that point offers a
 			// convenient, declarative representation (deployed objects YAML)
@@ -276,8 +273,7 @@ spec:
         networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443: allowed
     spec:
       containers:
-      - command:
-        - ./gardener-custom-metrics
+      - args:
         - --secure-port=6443
         - --tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt
         - --tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key
@@ -306,8 +302,6 @@ spec:
           requests:
             cpu: 80m
             memory: 200Mi
-        terminationMessagePath: /dev/termination-log
-        terminationMessagePolicy: File
         volumeMounts:
         - mountPath: /var/run/secrets/gardener.cloud/tls
           name: gardener-custom-metrics-tls
@@ -444,8 +438,6 @@ metadata:
   name: gardener-custom-metrics
   namespace: test-namespace
 spec:
-  ipFamilies:
-  - IPv4
   ports:
   - port: 443
     protocol: TCP
