@@ -35,7 +35,6 @@ import (
 	"github.com/gardener/gardener/pkg/client/kubernetes"
 	"github.com/gardener/gardener/pkg/component"
 	"github.com/gardener/gardener/pkg/component/apiserver"
-	"github.com/gardener/gardener/pkg/component/kubeapiserver/bipa"
 	"github.com/gardener/gardener/pkg/utils"
 	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/gardener/gardener/pkg/utils/kubernetes/health"
@@ -434,7 +433,7 @@ func (k *kubeAPIServer) Deploy(ctx context.Context) error {
 
 func (k *kubeAPIServer) Destroy(ctx context.Context) error {
 	deployment := k.emptyDeployment()
-	err := bipa.NewBilinearPodAutoscaler(k.namespace, deployment.Name).DeleteFromServer(ctx, k.client.Client())
+	err := NewBilinearPodAutoscaler(k.namespace, deployment.Name).DeleteFromServer(ctx, k.client.Client())
 	if err != nil {
 		return err
 	}
@@ -623,10 +622,10 @@ func (k *kubeAPIServer) reconcileBilinearPodAutoscaler(ctx context.Context, depl
 	isEnabled := k.values.Autoscaling.AutoscalingMode == apiserver.AutoscalingModeBilinear &&
 		k.values.Autoscaling.Replicas != nil &&
 		*k.values.Autoscaling.Replicas != 0
-	return bipa.NewBilinearPodAutoscaler(k.namespace, deploymentName).Reconcile(
+	return NewBilinearPodAutoscaler(k.namespace, deploymentName).Reconcile(
 		ctx,
 		k.client.Client(),
-		&bipa.DesiredStateParameters{
+		&BipaDesiredStateParameters{
 			IsEnabled:              isEnabled,
 			MinReplicaCount:        k.values.Autoscaling.MinReplicas,
 			MaxReplicaCount:        k.values.Autoscaling.MaxReplicas,

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package bipa
+package apiserver
 
 import (
 	"context"
@@ -55,9 +55,9 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 			ExpectWithOffset(1, err).To(matchers.BeNotFoundError())
 		}
 
-		newBipa = func(isEnabled bool) (*BilinearPodAutoscaler, *DesiredStateParameters) {
+		newBipa = func(isEnabled bool) (*BilinearPodAutoscaler, *BipaDesiredStateParameters) {
 			return NewBilinearPodAutoscaler(namespaceName, deploymentName),
-				&DesiredStateParameters{
+				&BipaDesiredStateParameters{
 					IsEnabled:              isEnabled,
 					MinReplicaCount:        1,
 					MaxReplicaCount:        4,

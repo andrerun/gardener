@@ -23,7 +23,7 @@ rough estimate comes with a substantial safety margin which is offset by VPA shr
 The VPA element is a typical VPA setup acting on both CPU and memory. The goal of VPA is to vertically adjust the
 replicas provided based on HPA's rough estimate, to a scale that best matches the actual need for compute power.
 */
-package bipa
+package apiserver
 
 import (
 	"context"
@@ -50,8 +50,8 @@ import (
 	"github.com/gardener/gardener/pkg/utils/managedresources"
 )
 
-// DesiredStateParameters contains all configurable options of the BilinearPodAutoscaler's desired state
-type DesiredStateParameters struct {
+// BipaDesiredStateParameters contains all configurable options of the BilinearPodAutoscaler's desired state
+type BipaDesiredStateParameters struct {
 	// The name of the kube-apiserver container inside the kube-apiserver pod
 	ContainerNameApiserver string
 	// If true, reconciliation will strive for a working deployment on the server. If false, reconciliation will remove
@@ -135,7 +135,7 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 // The seedClient parameter specifies a connection to the server hosting said control plane.
 // The 'parameters' parameter specifies the desired state that is to be applied upon the server-side autoscaler setup.
 func (bipa *BilinearPodAutoscaler) Reconcile(
-	ctx context.Context, seedClient client.Client, parameters *DesiredStateParameters) error {
+	ctx context.Context, seedClient client.Client, parameters *BipaDesiredStateParameters) error {
 	baseErrorMessage :=
 		fmt.Sprintf("An error occurred while reconciling BilinearPodAutoscaler '%s' in namespace '%s'",
 			bipa.deploymentNameApiserver,
