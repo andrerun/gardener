@@ -74,6 +74,9 @@ type BilinearPodAutoscaler struct {
 	namespace               string
 }
 
+// The name of the managed resource which serves as envelope for shoot application resources
+const managedResourceName = gardenercustommetrics.ComponentName
+
 // NewBilinearPodAutoscaler creates a local handle object, pointed at a server-side BilinearPodAutoscaler instance
 // of interest (either already existing, or desired). A BilinearPodAutoscaler lives in a shoot namespace,
 // specified by the namespace parameter. The resulting object can be used to manipulate the server-side setup.
@@ -92,9 +95,9 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 			bipa.deploymentNameApiserver,
 			bipa.namespace)
 
-	if err := managedresources.DeleteForShoot(ctx, seedClient, bipa.namespace, gardenercustommetrics.ComponentName); err != nil {
+	if err := managedresources.DeleteForShoot(ctx, seedClient, bipa.namespace, managedResourceName); err != nil {
 		return fmt.Errorf(baseErrorMessage+
-			" - failed to delete the ManagedResource '%s', which serves as envelope for delivering the resoures from "+
+			" - failed to delete the ManagedResource '%s', which serves as envelope for delivering the resources from "+
 			"seed to shoot. The error message reported by the underlying operation follows: %w",
 			gardenercustommetrics.ComponentName,
 			err)
