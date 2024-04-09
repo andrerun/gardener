@@ -43,7 +43,6 @@ const ComponentName = componentBaseName
 type GardenerCustomMetrics struct {
 	namespaceName      string
 	containerImageName string
-	isEnabled          bool
 	kubernetesVersion  *semver.Version
 
 	seedClient     client.Client
@@ -64,15 +63,13 @@ type GardenerCustomMetrics struct {
 func NewGardenerCustomMetrics(
 	namespace string,
 	containerImageName string,
-	enabled bool,
-	runtimeVersion *semver.Version,
+	kubernetesVersion *semver.Version,
 	seedClient client.Client,
 	secretsManager secretsmanager.Interface) *GardenerCustomMetrics {
 	return &GardenerCustomMetrics{
 		namespaceName:      namespace,
 		containerImageName: containerImageName,
-		isEnabled:          enabled,
-		kubernetesVersion:  runtimeVersion,
+		kubernetesVersion:  kubernetesVersion,
 		seedClient:         seedClient,
 		secretsManager:     secretsManager,
 
@@ -89,16 +86,6 @@ func (gcmx *GardenerCustomMetrics) Deploy(ctx context.Context) error {
 		fmt.Sprintf(
 			"An error occurred while deploying gardener-custom-metrics component in namespace '%s' of the seed server",
 			gcmx.namespaceName)
-
-	if !gcmx.isEnabled {
-		if err := gcmx.Destroy(ctx); err != nil {
-			return fmt.Errorf(baseErrorMessage+
-				" - failed to bring the gardener-custom-metrics on the server to a disabled state. "+
-				"The error message reported by the underlying operation follows: %w",
-				err)
-		}
-		return nil
-	}
 
 	serverCertificateSecret, err := gcmx.deployServerCertificate(ctx)
 	if err != nil {
