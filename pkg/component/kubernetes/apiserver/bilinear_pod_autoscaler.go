@@ -28,7 +28,6 @@ package apiserver
 import (
 	"context"
 	"fmt"
-
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -43,7 +42,6 @@ import (
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
-	"github.com/gardener/gardener/pkg/component/autoscaling/gardenercustommetrics"
 	"github.com/gardener/gardener/pkg/controllerutils"
 	gardenerutils "github.com/gardener/gardener/pkg/utils/gardener"
 	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
@@ -74,8 +72,11 @@ type BilinearPodAutoscaler struct {
 	namespace               string
 }
 
-// The name of the managed resource which serves as envelope for shoot application resources
-const managedResourceName = gardenercustommetrics.ComponentName
+const (
+	// The name of the managed resource which serves as envelope for shoot application resources
+	managedResourceName   = "gardener-custom-metrics"
+	shootAccessSecretName = "gardener-custom-metrics"
+)
 
 // NewBilinearPodAutoscaler creates a local handle object, pointed at a server-side BilinearPodAutoscaler instance
 // of interest (either already existing, or desired). A BilinearPodAutoscaler lives in a shoot namespace,
@@ -99,7 +100,7 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to delete the ManagedResource '%s', which serves as envelope for delivering the resources from "+
 			"seed to shoot. The error message reported by the underlying operation follows: %w",
-			gardenercustommetrics.ComponentName,
+			managedResourceName,
 			err)
 	}
 
@@ -117,7 +118,7 @@ func (bipa *BilinearPodAutoscaler) DeleteFromServer(ctx context.Context, seedCli
 			err)
 	}
 
-	shootAccessSecret := bipa.makeShootAccessSecret()
+	shootAccessSecret := bipa.makeEmptyShootAccessSecret()
 	if err := kubernetesutils.DeleteObjects(ctx, seedClient, shootAccessSecret.Secret); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to delete the secret '%s' from the server. The purpose of that secret is to provide shoot "+
@@ -166,7 +167,7 @@ func (bipa *BilinearPodAutoscaler) Reconcile(
 	}
 
 	// Create shoot access token for metrics scraping by gardener-custom-metrics
-	shootAccessSecret := bipa.makeShootAccessSecret()
+	shootAccessSecret := bipa.makeEmptyShootAccessSecret()
 	if err := shootAccessSecret.Reconcile(ctx, seedClient); err != nil {
 		return fmt.Errorf(baseErrorMessage+
 			" - failed to create the shoot access token secret '%s' on the server. "+
@@ -314,11 +315,11 @@ func makeDefaultVPAResourcePolicies(containerNameApiserver string) []vpaautoscal
 	}
 }
 
-// Creates an empty shoot access secret. The name of the resulting object is a fixed function of the input parameters,
+// makeEmptyShootAccessSecret creates an empty shoot access secret. The name of the resulting object is a fixed function of the input parameters,
 // so two instances created with the same parameters point to the same server side object.
-func (bipa *BilinearPodAutoscaler) makeShootAccessSecret() *gardenerutils.AccessSecret {
+func (bipa *BilinearPodAutoscaler) makeEmptyShootAccessSecret() *gardenerutils.AccessSecret {
 	return gardenerutils.
-		NewShootAccessSecret(gardenercustommetrics.ComponentName, bipa.namespace).
+		NewShootAccessSecret(shootAccessSecretName, bipa.namespace).
 		WithSecretLabels(map[string]string{"name": "shoot-access-gardener-custom-metrics"})
 }
 
@@ -370,7 +371,7 @@ func (bipa *BilinearPodAutoscaler) reconcileAppResources(ctx context.Context, se
 	// The shoot app resources we deploy are used only by gardener-custom-metrics. Thus, we package them in a
 	// managed resource named after gardener-custom-metrics instead of bipa itself.
 	err = managedresources.CreateForShoot(
-		ctx, seedClient, bipa.namespace, gardenercustommetrics.ComponentName, managedresources.LabelValueGardener, false, data)
+		ctx, seedClient, bipa.namespace, managedResourceName, managedresources.LabelValueGardener, false, data)
 	if err != nil {
 		return fmt.Errorf(baseErrorMessage+" - failed to create the ManagedResource object which serves as "+
 			"envelope for delivering the resoures from seed to shoot. "+

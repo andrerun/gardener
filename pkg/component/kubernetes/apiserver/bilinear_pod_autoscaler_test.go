@@ -66,7 +66,6 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 		}
 
 		newExpectedHpa = func(minReplicaCount int32, maxReplicaCount int32) *autoscalingv2.HorizontalPodAutoscaler {
-			lvalue300 := resource.MustParse("300")
 			return &autoscalingv2.HorizontalPodAutoscaler{
 				// TODO: Andrey: P1: Review
 				//TypeMeta: metav1.TypeMeta{
@@ -97,7 +96,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 							Type: autoscalingv2.PodsMetricSourceType,
 							Pods: &autoscalingv2.PodsMetricSource{
 								Metric: autoscalingv2.MetricIdentifier{Name: "shoot:apiserver_request_total:sum"},
-								Target: autoscalingv2.MetricTarget{AverageValue: &lvalue300, Type: autoscalingv2.AverageValueMetricType},
+								Target: autoscalingv2.MetricTarget{AverageValue: ptr.To(resource.MustParse("300")), Type: autoscalingv2.AverageValueMetricType},
 							},
 						},
 					},
@@ -106,11 +105,6 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 		}
 
 		newExpectedVpa = func() *vpaautoscalingv1.VerticalPodAutoscaler {
-			var (
-				scalingModeAutoAsLvalue              = vpaautoscalingv1.ContainerScalingModeAuto
-				controlledValuesRequestsOnlyAsLvalue = vpaautoscalingv1.ContainerControlledValuesRequestsOnly
-				updateModeAutoAsLvalue               = vpaautoscalingv1.UpdateModeAuto
-			)
 			return &vpaautoscalingv1.VerticalPodAutoscaler{
 				// TODO: Andrey: P1: Review
 				//TypeMeta: metav1.TypeMeta{
@@ -131,13 +125,13 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 					},
 					UpdatePolicy: &vpaautoscalingv1.PodUpdatePolicy{
 						MinReplicas: ptr.To[int32](1),
-						UpdateMode:  &updateModeAutoAsLvalue,
+						UpdateMode:  ptr.To(vpaautoscalingv1.UpdateModeAuto),
 					},
 					ResourcePolicy: &vpaautoscalingv1.PodResourcePolicy{
 						ContainerPolicies: []vpaautoscalingv1.ContainerResourcePolicy{
 							{
 								ContainerName: containerNameApiserver,
-								Mode:          &scalingModeAutoAsLvalue,
+								Mode:          ptr.To(vpaautoscalingv1.ContainerScalingModeAuto),
 								MinAllowed: corev1.ResourceList{
 									corev1.ResourceMemory: resource.MustParse("400M"),
 								},
@@ -145,7 +139,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 									corev1.ResourceCPU:    resource.MustParse("8"),
 									corev1.ResourceMemory: resource.MustParse("25G"),
 								},
-								ControlledValues: &controlledValuesRequestsOnlyAsLvalue,
+								ControlledValues: ptr.To(vpaautoscalingv1.ContainerControlledValuesRequestsOnly),
 							},
 						},
 					},
@@ -172,7 +166,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 		kubeClient = fakeclient.NewClientBuilder().WithScheme(kubernetes.SeedScheme).Build()
 	})
 
-	Describe(".Reconcile()", func() {
+	Describe("#Reconcile", func() {
 		Context("in enabled state", func() {
 			It("should deploy the correct resources to the shoot control plane", func() {
 				// Arrange
@@ -233,6 +227,7 @@ subjects:
 				Expect(actualSecret.Data["clusterrolebinding____gardener.cloud_monitoring_gardener-custom-metrics-target.yaml"]).To(Equal([]byte(expectedCrb)))
 			})
 		})
+
 		Context("in disabled state", func() {
 			It("should not deploy any resources to the shoot control plane", func() {
 				// Arrange
@@ -246,6 +241,7 @@ subjects:
 				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
 				assertObjectNotOnServer(&v1alpha1.ManagedResource{}, "gardener-custom-metrics")
 			})
+
 			It("should remove the respective resources already in the shoot control plane", func() {
 				// Arrange
 				bipa, desiredState := newBipa(true)
@@ -262,7 +258,8 @@ subjects:
 			})
 		})
 	})
-	Describe(".DeleteFromServer()", func() {
+
+	Describe("#DeleteFromServer", func() {
 		Context("in enabled state", func() {
 			It("should remove the respective resources in the shoot control plane", func() {
 				// Arrange
@@ -277,6 +274,7 @@ subjects:
 				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
 				assertObjectNotOnServer(&v1alpha1.ManagedResource{}, "gardener-custom-metrics")
 			})
+
 			It("should not fail if resources are missing on the seed", func() {
 				// Arrange
 				bipa, _ := newBipa(true)
@@ -290,6 +288,7 @@ subjects:
 				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
 			})
 		})
+
 		Context("in disabled state", func() {
 			It("should remove the respective resources in the shoot control plane", func() {
 				// Arrange
