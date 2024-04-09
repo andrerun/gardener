@@ -20,10 +20,12 @@ import (
 	"k8s.io/utils/ptr"
 )
 
+const serviceAccountName = "gardener-custom-metrics"
+
 func makeServiceAccount(namespace string) *corev1.ServiceAccount {
 	return &corev1.ServiceAccount{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      gcmxBaseName,
+			Name:      serviceAccountName,
 			Namespace: namespace,
 		},
 		AutomountServiceAccountToken: ptr.To(false),
