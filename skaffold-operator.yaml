@@ -69,8 +69,6 @@ build:
             - pkg/client/kubernetes/clientmap/keys
             - pkg/component
             - pkg/component/apiserver
-            - pkg/component/autoscaling/gardenercustommetrics
-            - pkg/component/autoscaling/gardenercustommetrics/kubeobjects
             - pkg/component/autoscaling/hvpa
             - pkg/component/autoscaling/vpa
             - pkg/component/autoscaling/vpa/constants

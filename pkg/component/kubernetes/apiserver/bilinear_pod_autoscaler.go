@@ -28,6 +28,7 @@ package apiserver
 import (
 	"context"
 	"fmt"
+
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv1 "k8s.io/api/autoscaling/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
@@ -198,7 +199,7 @@ func (bipa *BilinearPodAutoscaler) makeEmptyVPA() *vpaautoscalingv1.VerticalPodA
 	}
 }
 
-// Reconciles the HPA resource which is part of the BilinearPodAutoscaler.
+// reconcileHPA reconciles the HPA resource which is part of the BilinearPodAutoscaler.
 // minReplicaCount and maxReplicaCount control the horizontal scaling range.
 func (bipa *BilinearPodAutoscaler) reconcileHPA(
 	ctx context.Context, seedClient client.Client, minReplicaCount int32, maxReplicaCount int32) error {
@@ -246,7 +247,7 @@ func (bipa *BilinearPodAutoscaler) reconcileHPA(
 	return nil
 }
 
-// Reconciles the VPA resource which is part of the BilinearPodAutoscaler
+// reconcileVPA reconciles the VPA resource which is part of the BilinearPodAutoscaler
 func (bipa *BilinearPodAutoscaler) reconcileVPA(ctx context.Context, seedClient client.Client, containerNameApiserver string, minReplicaCount int32) error {
 	vpa := bipa.makeEmptyVPA()
 	_, err := controllerutils.GetAndCreateOrMergePatch(ctx, seedClient, vpa, func() error {

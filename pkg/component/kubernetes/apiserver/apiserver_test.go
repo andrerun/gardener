@@ -628,7 +628,7 @@ var _ = Describe("KubeAPIServer", func() {
 							To(Succeed())
 						Expect(kapi.Deploy(ctx)).To(Succeed())
 						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaAutoscalerElement), bipaAutoscalerElement)).
-							To(MatchError(ContainSubstring("not found")))
+							To(BeNotFoundError())
 					}
 				},
 
@@ -654,8 +654,7 @@ var _ = Describe("KubeAPIServer", func() {
 						Version: version,
 					})
 
-					Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).
-						To(MatchError(ContainSubstring("not found")))
+					Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).To(BeNotFoundError())
 
 					// Act
 					Expect(kapi.Deploy(ctx)).To(Succeed())
@@ -667,8 +666,7 @@ var _ = Describe("KubeAPIServer", func() {
 					if isEnabledExpected {
 						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).To(Succeed())
 					} else {
-						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).
-							To(MatchError(ContainSubstring("not found")))
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).To(BeNotFoundError())
 					}
 				},
 
