@@ -55,10 +55,9 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 			ExpectWithOffset(1, err).To(matchers.BeNotFoundError())
 		}
 
-		newBipa = func(isEnabled bool) (*BilinearPodAutoscaler, *BipaDesiredStateParameters) {
+		newBipa = func() (*BilinearPodAutoscaler, *BipaDesiredStateParameters) {
 			return NewBilinearPodAutoscaler(namespaceName, deploymentName),
 				&BipaDesiredStateParameters{
-					IsEnabled:              isEnabled,
 					MinReplicaCount:        1,
 					MaxReplicaCount:        4,
 					ContainerNameApiserver: containerNameApiserver,
@@ -170,7 +169,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 		Context("in enabled state", func() {
 			It("should deploy the correct resources to the shoot control plane", func() {
 				// Arrange
-				bipa, desiredState := newBipa(true)
+				bipa, desiredState := newBipa()
 				expectedClusterRole := `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -227,43 +226,13 @@ subjects:
 				Expect(actualSecret.Data["clusterrolebinding____gardener.cloud_monitoring_gardener-custom-metrics-target.yaml"]).To(Equal([]byte(expectedCrb)))
 			})
 		})
-
-		Context("in disabled state", func() {
-			It("should not deploy any resources to the shoot control plane", func() {
-				// Arrange
-				bipa, desiredState := newBipa(false)
-
-				// Act
-				Expect(bipa.Reconcile(ctx, kubeClient, desiredState)).To(Succeed())
-
-				// Assert
-				assertObjectNotOnServer(&autoscalingv2.HorizontalPodAutoscaler{}, hpaName)
-				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
-				assertObjectNotOnServer(&v1alpha1.ManagedResource{}, "gardener-custom-metrics")
-			})
-
-			It("should remove the respective resources already in the shoot control plane", func() {
-				// Arrange
-				bipa, desiredState := newBipa(true)
-				mr := createDummyControlPlaneObjects(bipa)
-				desiredState.IsEnabled = false
-
-				// Act
-				Expect(bipa.Reconcile(ctx, kubeClient, desiredState)).To(Succeed())
-
-				// Assert
-				assertObjectNotOnServer(&autoscalingv2.HorizontalPodAutoscaler{}, hpaName)
-				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
-				assertObjectNotOnServer(mr, mr.Name)
-			})
-		})
 	})
 
 	Describe("#DeleteFromServer", func() {
 		Context("in enabled state", func() {
 			It("should remove the respective resources in the shoot control plane", func() {
 				// Arrange
-				bipa, _ := newBipa(true)
+				bipa, _ := newBipa()
 				createDummyControlPlaneObjects(bipa)
 
 				// Act
@@ -277,7 +246,7 @@ subjects:
 
 			It("should not fail if resources are missing on the seed", func() {
 				// Arrange
-				bipa, _ := newBipa(true)
+				bipa, _ := newBipa()
 
 				// Act
 				err := bipa.DeleteFromServer(ctx, kubeClient)
@@ -286,23 +255,6 @@ subjects:
 				Expect(err).To(Succeed())
 				assertObjectNotOnServer(&autoscalingv2.HorizontalPodAutoscaler{}, hpaName)
 				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
-			})
-		})
-
-		Context("in disabled state", func() {
-			It("should remove the respective resources in the shoot control plane", func() {
-				// Arrange
-				bipa, desiredState := newBipa(true)
-				createDummyControlPlaneObjects(bipa)
-				desiredState.IsEnabled = false
-
-				// Act
-				Expect(bipa.DeleteFromServer(ctx, kubeClient)).To(Succeed())
-
-				// Assert
-				assertObjectNotOnServer(&autoscalingv2.HorizontalPodAutoscaler{}, hpaName)
-				assertObjectNotOnServer(&vpaautoscalingv1.VerticalPodAutoscaler{}, vpaName)
-				assertObjectNotOnServer(&v1alpha1.ManagedResource{}, "gardener-custom-metrics")
 			})
 		})
 	})
