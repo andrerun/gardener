@@ -31,7 +31,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			Name:      deploymentName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				"app": gcmxBaseName,
+				v1beta1constants.LabelApp: gcmxBaseName,
 				// The actual availability requirement of gardener-custom-metrics is closer to the "controller"
 				// availability level (even less, actually). The value below is set to "server" solely to satisfy
 				// the requirement for consistency with existing components.
@@ -43,16 +43,16 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 			RevisionHistoryLimit: ptr.To[int32](2),
 			Selector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
-					"app":                       gcmxBaseName,
+					v1beta1constants.LabelApp:   gcmxBaseName,
 					v1beta1constants.GardenRole: gcmxBaseName,
 				},
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app":                                    gcmxBaseName,
-						v1beta1constants.GardenRole:              gcmxBaseName,
-						v1beta1constants.LabelNetworkPolicyToDNS: "allowed",
+						v1beta1constants.LabelApp:                                                  gcmxBaseName,
+						v1beta1constants.GardenRole:                                                gcmxBaseName,
+						v1beta1constants.LabelNetworkPolicyToDNS:                                   "allowed",
 						v1beta1constants.LabelNetworkPolicyToRuntimeAPIServer:                      "allowed",
 						"networking.resources.gardener.cloud/to-all-shoots-kube-apiserver-tcp-443": "allowed",
 					},
@@ -65,7 +65,7 @@ func makeDeployment(deploymentName, namespace, containerImageName, serverSecretN
 								"--tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt",
 								"--tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key",
 								"--leader-election=true",
-								"--namespace=garden",
+								"--namespace=" + namespace,
 								"--access-ip=$(POD_IP)",
 								"--access-port=6443",
 								"--log-level=74",
