@@ -226,7 +226,7 @@ var _ = Describe("KubeAPIServer", func() {
 				Entry("default behaviour, Bilinear autoscaling",
 					nil,
 					map[featuregate.Feature]bool{
-						features.BilinearAutoscaling: true,
+						features.BilinearPodAutoscalingForAPIServer: true,
 					},
 					apiserver.AutoscalingConfig{
 						APIServerResources: corev1.ResourceRequirements{
@@ -261,7 +261,7 @@ var _ = Describe("KubeAPIServer", func() {
 						botanist.Shoot.Purpose = gardencorev1beta1.ShootPurposeProduction
 					},
 					map[featuregate.Feature]bool{
-						features.BilinearAutoscaling: true,
+						features.BilinearPodAutoscalingForAPIServer: true,
 					},
 					apiserver.AutoscalingConfig{
 						APIServerResources: corev1.ResourceRequirements{
@@ -345,8 +345,8 @@ var _ = Describe("KubeAPIServer", func() {
 						}
 					},
 					map[featuregate.Feature]bool{
-						features.HVPAForShootedSeed:  true,
-						features.BilinearAutoscaling: true,
+						features.HVPAForShootedSeed:                 true,
+						features.BilinearPodAutoscalingForAPIServer: true,
 					},
 					apiserver.AutoscalingConfig{
 						APIServerResources: corev1.ResourceRequirements{

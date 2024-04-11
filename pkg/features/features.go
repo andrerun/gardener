@@ -77,11 +77,11 @@ const (
 	// alpha: v1.93.0
 	ShootManagedIssuer featuregate.Feature = "ShootManagedIssuer"
 
-	// BilinearAutoscaling is applied to a seed cluster and enables simultaneous independent horizontal and vertical scaling.
+	// BilinearPodAutoscalingForAPIServer is applied to a seed cluster and enables simultaneous independent horizontal and vertical scaling.
 	// This feature is incompatible with the HVPA and HVPAForShootedSeed features.
 	// owner @andrerun
 	// alpha: v1.93.0
-	BilinearAutoscaling featuregate.Feature = "BilinearAutoscaling"
+	BilinearPodAutoscalingForAPIServer featuregate.Feature = "BilinearPodAutoscalingForAPIServer"
 )
 
 // DefaultFeatureGate is the central feature gate map used by all gardener components.
@@ -109,16 +109,16 @@ var DefaultFeatureGate = utilfeature.DefaultMutableFeatureGate
 
 // AllFeatureGates is the list of all feature gates.
 var AllFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	HVPA:                            {Default: false, PreRelease: featuregate.Alpha},
-	HVPAForShootedSeed:              {Default: false, PreRelease: featuregate.Alpha},
-	DefaultSeccompProfile:           {Default: false, PreRelease: featuregate.Alpha},
-	CoreDNSQueryRewriting:           {Default: false, PreRelease: featuregate.Alpha},
-	IPv6SingleStack:                 {Default: false, PreRelease: featuregate.Alpha},
-	MutableShootSpecNetworkingNodes: {Default: false, PreRelease: featuregate.Alpha},
-	ShootManagedIssuer:              {Default: false, PreRelease: featuregate.Alpha},
-	ShootForceDeletion:              {Default: true, PreRelease: featuregate.Beta},
-	UseNamespacedCloudProfile:       {Default: false, PreRelease: featuregate.Alpha},
-	BilinearAutoscaling:             {Default: false, PreRelease: featuregate.Alpha},
+	HVPA:                               {Default: false, PreRelease: featuregate.Alpha},
+	HVPAForShootedSeed:                 {Default: false, PreRelease: featuregate.Alpha},
+	DefaultSeccompProfile:              {Default: false, PreRelease: featuregate.Alpha},
+	CoreDNSQueryRewriting:              {Default: false, PreRelease: featuregate.Alpha},
+	IPv6SingleStack:                    {Default: false, PreRelease: featuregate.Alpha},
+	MutableShootSpecNetworkingNodes:    {Default: false, PreRelease: featuregate.Alpha},
+	ShootManagedIssuer:                 {Default: false, PreRelease: featuregate.Alpha},
+	ShootForceDeletion:                 {Default: true, PreRelease: featuregate.Beta},
+	UseNamespacedCloudProfile:          {Default: false, PreRelease: featuregate.Alpha},
+	BilinearPodAutoscalingForAPIServer: {Default: false, PreRelease: featuregate.Alpha},
 }
 
 // GetFeatures returns a feature gate map with the respective specifications. Non-existing feature gates are ignored.

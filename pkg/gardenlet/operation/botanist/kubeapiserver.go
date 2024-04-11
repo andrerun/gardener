@@ -162,7 +162,7 @@ func (b *Botanist) computeKubeAPIServerAutoscalingConfig() apiserver.Autoscaling
 
 func (b *Botanist) getAutoscalingMode() apiserver.AutoscalingMode {
 	// BilinearAutoscaling takes precedence
-	if features.DefaultFeatureGate.Enabled(features.BilinearAutoscaling) {
+	if features.DefaultFeatureGate.Enabled(features.BilinearPodAutoscalingForAPIServer) {
 		return apiserver.AutoscalingModeBilinear
 	}
 
