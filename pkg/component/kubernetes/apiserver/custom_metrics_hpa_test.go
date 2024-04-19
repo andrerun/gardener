@@ -35,14 +35,14 @@ import (
 	"github.com/gardener/gardener/pkg/utils/test/matchers"
 )
 
-var _ = Describe("BilinearPodAutoscaler", func() {
+var _ = Describe("CustomMetricsHPA", func() {
 	const (
 		containerNameApiserver = "kube-apiserver"
 	)
 	var (
 		deploymentName = "test-deployment"
 		namespaceName  = "test-namespace"
-		hpaName        = deploymentName + "-bipa"
+		hpaName        = deploymentName + "-cmh"
 		vpaName        = hpaName
 
 		kubeClient client.Client
@@ -55,9 +55,9 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 			ExpectWithOffset(1, err).To(matchers.BeNotFoundError())
 		}
 
-		newBipa = func() (*BilinearPodAutoscaler, *BipaDesiredStateParameters) {
-			return NewBilinearPodAutoscaler(namespaceName, deploymentName),
-				&BipaDesiredStateParameters{
+		newCmh = func() (*CustomMetricsHPA, *CustomMetricsHPADesiredStateParameters) {
+			return NewCustomMetricsHPA(namespaceName, deploymentName),
+				&CustomMetricsHPADesiredStateParameters{
 					MinReplicaCount:        1,
 					MaxReplicaCount:        4,
 					ContainerNameApiserver: containerNameApiserver,
@@ -66,11 +66,6 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 
 		newExpectedHpa = func(minReplicaCount int32, maxReplicaCount int32) *autoscalingv2.HorizontalPodAutoscaler {
 			return &autoscalingv2.HorizontalPodAutoscaler{
-				// TODO: Andrey: P1: Review
-				//TypeMeta: metav1.TypeMeta{
-				//	APIVersion: autoscalingv2.SchemeGroupVersion.String(),
-				//	Kind:       "HorizontalPodAutoscaler",
-				//},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:            hpaName,
 					Namespace:       namespaceName,
@@ -105,11 +100,6 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 
 		newExpectedVpa = func() *vpaautoscalingv1.VerticalPodAutoscaler {
 			return &vpaautoscalingv1.VerticalPodAutoscaler{
-				// TODO: Andrey: P1: Review
-				//TypeMeta: metav1.TypeMeta{
-				//	APIVersion: vpaautoscalingv1.SchemeGroupVersion.String(),
-				//	Kind:       "VerticalPodAutoscaler",
-				//},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:            vpaName,
 					Namespace:       namespaceName,
@@ -146,10 +136,10 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 			}
 		}
 
-		// Creates empty control plane objects which superficially mirror the objects deployed by BIPA reconciliation
-		createDummyControlPlaneObjects = func(bipa *BilinearPodAutoscaler) *v1alpha1.ManagedResource {
-			Expect(kubeClient.Create(ctx, bipa.makeEmptyHPA())).To(Succeed())
-			Expect(kubeClient.Create(ctx, bipa.makeEmptyVPA())).To(Succeed())
+		// Creates empty control plane objects which superficially mirror the objects deployed by CustomMetricsHPA reconciliation
+		createDummyControlPlaneObjects = func(cmh *CustomMetricsHPA) *v1alpha1.ManagedResource {
+			Expect(kubeClient.Create(ctx, cmh.makeEmptyHPA())).To(Succeed())
+			Expect(kubeClient.Create(ctx, cmh.makeEmptyVPA())).To(Succeed())
 
 			mr := &v1alpha1.ManagedResource{
 				ObjectMeta: metav1.ObjectMeta{Namespace: namespaceName, Name: "gardener-custom-metrics"},
@@ -169,7 +159,7 @@ var _ = Describe("BilinearPodAutoscaler", func() {
 		Context("in enabled state", func() {
 			It("should deploy the correct resources to the shoot control plane", func() {
 				// Arrange
-				bipa, desiredState := newBipa()
+				cmh, desiredState := newCmh()
 				expectedClusterRole := `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -200,7 +190,7 @@ subjects:
 `
 
 				// Act
-				Expect(bipa.Reconcile(ctx, kubeClient, desiredState)).To(Succeed())
+				Expect(cmh.Reconcile(ctx, kubeClient, desiredState)).To(Succeed())
 
 				// Assert
 				actualHpa := autoscalingv2.HorizontalPodAutoscaler{}
@@ -232,11 +222,11 @@ subjects:
 		Context("in enabled state", func() {
 			It("should remove the respective resources in the shoot control plane", func() {
 				// Arrange
-				bipa, _ := newBipa()
-				createDummyControlPlaneObjects(bipa)
+				cmh, _ := newCmh()
+				createDummyControlPlaneObjects(cmh)
 
 				// Act
-				Expect(bipa.DeleteFromServer(ctx, kubeClient)).To(Succeed())
+				Expect(cmh.DeleteFromServer(ctx, kubeClient)).To(Succeed())
 
 				// Assert
 				assertObjectNotOnServer(&autoscalingv2.HorizontalPodAutoscaler{}, hpaName)
@@ -246,10 +236,10 @@ subjects:
 
 			It("should not fail if resources are missing on the seed", func() {
 				// Arrange
-				bipa, _ := newBipa()
+				cmh, _ := newCmh()
 
 				// Act
-				err := bipa.DeleteFromServer(ctx, kubeClient)
+				err := cmh.DeleteFromServer(ctx, kubeClient)
 
 				// Assert
 				Expect(err).To(Succeed())

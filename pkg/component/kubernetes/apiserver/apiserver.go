@@ -282,7 +282,7 @@ func (k *kubeAPIServer) Deploy(ctx context.Context) error {
 		return err
 	}
 
-	if err := k.reconcileBilinearPodAutoscaler(ctx, deployment.Name); err != nil {
+	if err := k.reconcileCustomMetricsHPA(ctx, deployment.Name); err != nil {
 		return err
 	}
 
@@ -433,7 +433,7 @@ func (k *kubeAPIServer) Deploy(ctx context.Context) error {
 
 func (k *kubeAPIServer) Destroy(ctx context.Context) error {
 	deployment := k.emptyDeployment()
-	err := NewBilinearPodAutoscaler(k.namespace, deployment.Name).DeleteFromServer(ctx, k.client.Client())
+	err := NewCustomMetricsHPA(k.namespace, deployment.Name).DeleteFromServer(ctx, k.client.Client())
 	if err != nil {
 		return err
 	}
@@ -618,20 +618,20 @@ func ComputeKubeAPIServerServiceAccountConfig(
 	return out
 }
 
-func (k *kubeAPIServer) reconcileBilinearPodAutoscaler(ctx context.Context, deploymentName string) error {
-	isEnabled := k.values.Autoscaling.AutoscalingMode == apiserver.AutoscalingModeBilinear &&
+func (k *kubeAPIServer) reconcileCustomMetricsHPA(ctx context.Context, deploymentName string) error {
+	isEnabled := k.values.Autoscaling.AutoscalingMode == apiserver.AutoscalingModeCustomMetricsHPA &&
 		k.values.Autoscaling.Replicas != nil &&
 		*k.values.Autoscaling.Replicas != 0
-	bipa := NewBilinearPodAutoscaler(k.namespace, deploymentName)
+	cmh := NewCustomMetricsHPA(k.namespace, deploymentName)
 
 	if !isEnabled {
-		return bipa.DeleteFromServer(ctx, k.client.Client())
+		return cmh.DeleteFromServer(ctx, k.client.Client())
 	}
 
-	return NewBilinearPodAutoscaler(k.namespace, deploymentName).Reconcile(
+	return NewCustomMetricsHPA(k.namespace, deploymentName).Reconcile(
 		ctx,
 		k.client.Client(),
-		&BipaDesiredStateParameters{
+		&CustomMetricsHPADesiredStateParameters{
 			MinReplicaCount:        k.values.Autoscaling.MinReplicas,
 			MaxReplicaCount:        k.values.Autoscaling.MaxReplicas,
 			ContainerNameApiserver: ContainerNameKubeAPIServer,

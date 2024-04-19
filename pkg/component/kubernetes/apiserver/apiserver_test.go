@@ -114,8 +114,8 @@ var _ = Describe("KubeAPIServer", func() {
 		deployment                 *appsv1.Deployment
 		horizontalPodAutoscaler    *autoscalingv2.HorizontalPodAutoscaler
 		verticalPodAutoscaler      *vpaautoscalingv1.VerticalPodAutoscaler
-		bipaHpa                    *autoscalingv2.HorizontalPodAutoscaler  // The HPA which is part of the BilinearPodAutoscaler
-		bipaVpa                    *vpaautoscalingv1.VerticalPodAutoscaler // The VPA which is part of the BilinearPodAutoscaler
+		cmhHpa                     *autoscalingv2.HorizontalPodAutoscaler  // The HPA which is part of the CustomMetricsHPA
+		cmhVpa                     *vpaautoscalingv1.VerticalPodAutoscaler // The VPA which is part of the CustomMetricsHPA
 		hvpa                       *hvpav1alpha1.Hvpa
 		podDisruptionBudget        *policyv1.PodDisruptionBudget
 		configMapAdmission         *corev1.ConfigMap
@@ -178,15 +178,15 @@ var _ = Describe("KubeAPIServer", func() {
 				Namespace: namespace,
 			},
 		}
-		bipaHpa = &autoscalingv2.HorizontalPodAutoscaler{
+		cmhHpa = &autoscalingv2.HorizontalPodAutoscaler{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "kube-apiserver-bipa",
+				Name:      "kube-apiserver-cmh",
 				Namespace: namespace,
 			},
 		}
-		bipaVpa = &vpaautoscalingv1.VerticalPodAutoscaler{
+		cmhVpa = &vpaautoscalingv1.VerticalPodAutoscaler{
 			ObjectMeta: metav1.ObjectMeta{
-				Name:      "kube-apiserver-bipa",
+				Name:      "kube-apiserver-cmh",
 				Namespace: namespace,
 			},
 		}
@@ -235,7 +235,7 @@ var _ = Describe("KubeAPIServer", func() {
 				},
 
 				Entry("Scaling mode is HVPA", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
-				Entry("Scaling mode is Bilinear", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBilinear}),
+				Entry("Scaling mode is CustomMetricsHPA", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeCustomMetricsHPA}),
 				Entry("replicas is nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: nil}),
 				Entry("replicas is 0", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline, Replicas: ptr.To[int32](0)}),
 			)
@@ -364,7 +364,7 @@ var _ = Describe("KubeAPIServer", func() {
 				},
 
 				Entry("In Baseline autoscaling mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBaseline}),
-				Entry("In Bilinear autoscaling mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeBilinear}),
+				Entry("In CustomMetricsHPA autoscaling mode", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeCustomMetricsHPA}),
 				Entry("HVPA enabled but replicas nil", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA}),
 				Entry("HVPA enabled but replicas zero", apiserver.AutoscalingConfig{AutoscalingMode: apiserver.AutoscalingModeHVPA, Replicas: ptr.To[int32](0)}),
 			)
@@ -611,8 +611,8 @@ var _ = Describe("KubeAPIServer", func() {
 			)
 		})
 
-		Describe("BilinearPodAutoscaler", func() {
-			DescribeTable("should delete bipa's HPA and VPA resources",
+		Describe("CustomMetricsHPA", func() {
+			DescribeTable("should delete cmh's HPA and VPA resources",
 				func(autoscalingConfig apiserver.AutoscalingConfig) {
 					kapi = New(kubernetesInterface, namespace, sm, Values{
 						Values: apiserver.Values{
@@ -622,12 +622,12 @@ var _ = Describe("KubeAPIServer", func() {
 						Version: version,
 					})
 
-					for _, bipaAutoscalerElement := range []client.Object{bipaHpa, bipaVpa} {
-						Expect(c.Create(ctx, bipaAutoscalerElement)).To(Succeed())
-						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaAutoscalerElement), bipaAutoscalerElement)).
+					for _, cmhAutoscalerElement := range []client.Object{cmhHpa, cmhVpa} {
+						Expect(c.Create(ctx, cmhAutoscalerElement)).To(Succeed())
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(cmhAutoscalerElement), cmhAutoscalerElement)).
 							To(Succeed())
 						Expect(kapi.Deploy(ctx)).To(Succeed())
-						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaAutoscalerElement), bipaAutoscalerElement)).
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(cmhAutoscalerElement), cmhAutoscalerElement)).
 							To(BeNotFoundError())
 					}
 				},
@@ -654,25 +654,25 @@ var _ = Describe("KubeAPIServer", func() {
 						Version: version,
 					})
 
-					Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).To(BeNotFoundError())
+					Expect(c.Get(ctx, client.ObjectKeyFromObject(cmhHpa), cmhHpa)).To(BeNotFoundError())
 
 					// Act
 					Expect(kapi.Deploy(ctx)).To(Succeed())
 
 					// Assert
 
-					// Check just the presence of BIPA's HPA, as indicator of overall BIPA status. The detailed check
-					// of what gets deployed, is in the dedicated BIPA test
+					// Check just the presence of CustomMetricsHPA's HPA, as indicator of overall CustomMetricsHPA status.
+					// The detailed check of what gets deployed, is in the dedicated CustomMetricsHPA test
 					if isEnabledExpected {
-						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).To(Succeed())
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(cmhHpa), cmhHpa)).To(Succeed())
 					} else {
-						Expect(c.Get(ctx, client.ObjectKeyFromObject(bipaHpa), bipaHpa)).To(BeNotFoundError())
+						Expect(c.Get(ctx, client.ObjectKeyFromObject(cmhHpa), cmhHpa)).To(BeNotFoundError())
 					}
 				},
 
-				Entry("BIPA disabled in HVPA mode", apiserver.AutoscalingModeHVPA, false),
-				Entry("BIPA disabled in Baseline mode", apiserver.AutoscalingModeBaseline, false),
-				Entry("BIPA enabled in BIPA mode", apiserver.AutoscalingModeBilinear, true),
+				Entry("CustomMetricsHPA disabled in HVPA mode", apiserver.AutoscalingModeHVPA, false),
+				Entry("CustomMetricsHPA disabled in Baseline mode", apiserver.AutoscalingModeBaseline, false),
+				Entry("CustomMetricsHPA enabled in CustomMetricsHPA mode", apiserver.AutoscalingModeCustomMetricsHPA, true),
 			)
 		})
 

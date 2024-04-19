@@ -223,10 +223,10 @@ var _ = Describe("KubeAPIServer", func() {
 						ScaleDownDisabledForHvpa:  false,
 					},
 				),
-				Entry("default behaviour, Bilinear autoscaling",
+				Entry("default behaviour, CustomMetricsHPA autoscaling",
 					nil,
 					map[featuregate.Feature]bool{
-						features.BilinearPodAutoscalingForAPIServer: true,
+						features.CustomMetricsHPAForAPIServer: true,
 					},
 					apiserver.AutoscalingConfig{
 						APIServerResources: corev1.ResourceRequirements{
@@ -235,7 +235,7 @@ var _ = Describe("KubeAPIServer", func() {
 								corev1.ResourceMemory: resource.MustParse("1Gi"),
 							},
 						},
-						AutoscalingMode:           apiserver.AutoscalingModeBilinear,
+						AutoscalingMode:           apiserver.AutoscalingModeCustomMetricsHPA,
 						MinReplicas:               1,
 						MaxReplicas:               4,
 						UseMemoryMetricForHvpaHPA: false,
@@ -256,12 +256,12 @@ var _ = Describe("KubeAPIServer", func() {
 						ScaleDownDisabledForHvpa:  false,
 					},
 				),
-				Entry("shoot purpose production, Bilinear autoscaling",
+				Entry("shoot purpose production, CustomMetricsHPA autoscaling",
 					func() {
 						botanist.Shoot.Purpose = gardencorev1beta1.ShootPurposeProduction
 					},
 					map[featuregate.Feature]bool{
-						features.BilinearPodAutoscalingForAPIServer: true,
+						features.CustomMetricsHPAForAPIServer: true,
 					},
 					apiserver.AutoscalingConfig{
 						APIServerResources: corev1.ResourceRequirements{
@@ -270,7 +270,7 @@ var _ = Describe("KubeAPIServer", func() {
 								corev1.ResourceMemory: resource.MustParse("1Gi"),
 							},
 						},
-						AutoscalingMode:           apiserver.AutoscalingModeBilinear,
+						AutoscalingMode:           apiserver.AutoscalingModeCustomMetricsHPA,
 						MinReplicas:               2,
 						MaxReplicas:               4,
 						UseMemoryMetricForHvpaHPA: false,
@@ -333,7 +333,7 @@ var _ = Describe("KubeAPIServer", func() {
 						ScaleDownDisabledForHvpa:  false,
 					},
 				),
-				Entry("shoot is a managed seed w/ APIServer settings, Bilinear autoscaling",
+				Entry("shoot is a managed seed w/ APIServer settings, CustomMetricsHPA autoscaling",
 					func() {
 						botanist.ManagedSeed = &seedmanagementv1alpha1.ManagedSeed{}
 						botanist.ManagedSeedAPIServer = &helper.ManagedSeedAPIServer{
@@ -345,8 +345,8 @@ var _ = Describe("KubeAPIServer", func() {
 						}
 					},
 					map[featuregate.Feature]bool{
-						features.HVPAForShootedSeed:                 true,
-						features.BilinearPodAutoscalingForAPIServer: true,
+						features.HVPAForShootedSeed:           true,
+						features.CustomMetricsHPAForAPIServer: true,
 					},
 					apiserver.AutoscalingConfig{
 						APIServerResources: corev1.ResourceRequirements{
@@ -355,7 +355,7 @@ var _ = Describe("KubeAPIServer", func() {
 								corev1.ResourceMemory: resource.MustParse("1Gi"),
 							},
 						},
-						AutoscalingMode:           apiserver.AutoscalingModeBilinear,
+						AutoscalingMode:           apiserver.AutoscalingModeCustomMetricsHPA,
 						MinReplicas:               16,
 						MaxReplicas:               32,
 						UseMemoryMetricForHvpaHPA: true,
