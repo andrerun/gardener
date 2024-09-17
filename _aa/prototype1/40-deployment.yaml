@@ -1,0 +1,110 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+    high-availability-config.resources.gardener.cloud/type: "controller"
+  name: pvc-autoscaler
+  namespace: garden
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector:
+    matchLabels:
+      app:  pvc-autoscaler
+      gardener.cloud/role: pvc-autoscaler
+  template:
+    metadata:
+      annotations:
+        kubectl.kubernetes.io/default-container: pvc-autoscaler
+        prometheus.io/name: pvc-autoscaler
+        prometheus.io/port: "8443"
+        prometheus.io/scheme: http
+        prometheus.io/scrape: "true"
+      labels:
+        app:  pvc-autoscaler
+        gardener.cloud/role: pvc-autoscaler
+        networking.gardener.cloud/to-dns: allowed
+        networking.gardener.cloud/to-runtime-apiserver: allowed
+        networking.resources.gardener.cloud/to-prometheus-cache-tcp-9090: allowed
+
+    spec:
+      containers:
+        - args:
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address=127.0.0.1:8080
+            - --leader-elect
+            - --interval=150s
+            - --prometheus-address=http://prometheus-cache.garden.svc.cluster.local:80
+          command:
+            - /manager
+          image: europe-docker.pkg.dev/gardener-project/releases/gardener/pvc-autoscaler:v0.1.1
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          name: pvc-autoscaler
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 4
+              memory: 10Gi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+        - args:
+            - --secure-listen-address=0.0.0.0:8443
+            - --tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt
+            - --tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key
+            - --upstream=http://127.0.0.1:8080/
+            - --logtostderr=true
+            - --v=2
+          image: gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0
+          name: kube-rbac-proxy
+          ports:
+            - containerPort: 8443
+              name: https
+              protocol: TCP
+          resources:
+            limits:
+              cpu: 1
+              memory: 2Gi
+            requests:
+              cpu: 5m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - mountPath: /var/run/secrets/gardener.cloud/tls
+              name: tls
+              readOnly: true
+      priorityClassName: gardener-system-700
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: pvc-autoscaler
+      terminationGracePeriodSeconds: 10
+      volumes:
+        - name: tls
+          secret:
+            defaultMode: 420
+            secretName: pvc-autoscaler-tls
+
+
+# TODO: Overall, do test if metrics work at all through RBAC endpoint

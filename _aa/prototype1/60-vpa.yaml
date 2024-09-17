@@ -1,0 +1,25 @@
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: pvc-autoscaler
+  namespace: garden
+  labels:
+    app: pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+spec:
+  resourcePolicy:
+    containerPolicies:
+      - containerName: '*'
+        controlledValues: RequestsOnly
+      - containerName: pvc-autoscaler
+        minAllowed:
+          memory: 10Mi
+      - containerName: kube-rbac-proxy
+        minAllowed:
+          memory: 10Mi
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: pvc-autoscaler
+  updatePolicy:
+    updateMode: Auto

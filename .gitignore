@@ -2,7 +2,6 @@
 /bin
 /hack/tools/bin
 /.kube-secrets
-/tmp/*
 /local
 /dev
 

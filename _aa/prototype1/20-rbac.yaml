@@ -1,0 +1,163 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler-leader-elector
+  namespace: garden
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - configmaps
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler-manager
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims/status
+    verbs:
+      - get
+  - apiGroups:
+      - storage.k8s.io
+    resources:
+      - storageclasses
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler-metrics-reader
+rules:
+  - nonResourceURLs:
+      - /metrics
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler-proxy
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+  - apiGroups:
+      - authorization.k8s.io
+    resources:
+      - subjectaccessreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler--pvc-autoscaler-leader-elector
+  namespace: garden
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: pvc-autoscaler-leader-elector
+subjects:
+  - kind: ServiceAccount
+    name: pvc-autoscaler
+    namespace: garden
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler--pvc-autoscaler-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pvc-autoscaler-manager
+subjects:
+  - kind: ServiceAccount
+    name: pvc-autoscaler
+    namespace: garden
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler--pvc-autoscaler-proxy
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: pvc-autoscaler-proxy
+subjects:
+  - kind: ServiceAccount
+    name: pvc-autoscaler
+    namespace: garden
