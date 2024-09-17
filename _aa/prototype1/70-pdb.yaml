@@ -1,0 +1,15 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  labels:
+    app: pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler
+  namespace: garden
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: pvc-autoscaler
+      gardener.cloud/role: pvc-autoscaler
+  unhealthyPodEvictionPolicy: AlwaysAllow
