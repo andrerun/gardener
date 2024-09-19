@@ -7,18 +7,19 @@ metadata:
   name: pvc-autoscaler-leader-elector
   namespace: garden
 rules:
-  - apiGroups:
-      - ""
-    resources:
-      - configmaps
-    verbs:
-      - get
-      - list
-      - watch
-      - create
-      - update
-      - patch
-      - delete
+# TODO: Andrey: P1: I don't think we need access to configmaps for leader election
+#  - apiGroups:
+#      - ""
+#    resources:
+#      - configmaps
+#    verbs:
+#      - get
+#      - list
+#      - watch
+#      - create
+#      - update
+#      - patch
+#      - delete
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -45,7 +46,7 @@ metadata:
   labels:
     app:  pvc-autoscaler
     gardener.cloud/role: pvc-autoscaler
-  name: pvc-autoscaler-manager
+  name: pvc-autoscaler-controller
 rules:
   - apiGroups:
       - ""
@@ -136,11 +137,11 @@ metadata:
   labels:
     app:  pvc-autoscaler
     gardener.cloud/role: pvc-autoscaler
-  name: pvc-autoscaler--pvc-autoscaler-manager
+  name: pvc-autoscaler--pvc-autoscaler-controller
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: pvc-autoscaler-manager
+  name: pvc-autoscaler-controller
 subjects:
   - kind: ServiceAccount
     name: pvc-autoscaler

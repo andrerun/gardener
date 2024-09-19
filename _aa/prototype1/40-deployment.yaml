@@ -21,7 +21,7 @@ spec:
         kubectl.kubernetes.io/default-container: pvc-autoscaler
         prometheus.io/name: pvc-autoscaler
         prometheus.io/port: "8443"
-        prometheus.io/scheme: http
+        prometheus.io/scheme: https
         prometheus.io/scrape: "true"
       labels:
         app:  pvc-autoscaler
@@ -29,14 +29,13 @@ spec:
         networking.gardener.cloud/to-dns: allowed
         networking.gardener.cloud/to-runtime-apiserver: allowed
         networking.resources.gardener.cloud/to-prometheus-cache-tcp-9090: allowed
-
     spec:
       containers:
         - args:
             - --health-probe-bind-address=:8081
             - --metrics-bind-address=127.0.0.1:8080
             - --leader-elect
-            - --interval=150s
+            - --interval=60s
             - --prometheus-address=http://prometheus-cache.garden.svc.cluster.local:80
           command:
             - /manager
@@ -47,6 +46,7 @@ spec:
               port: 8081
             initialDelaySeconds: 15
             periodSeconds: 20
+            timeoutSeconds: 5
           name: pvc-autoscaler
           readinessProbe:
             httpGet:
@@ -60,7 +60,7 @@ spec:
               memory: 10Gi
             requests:
               cpu: 10m
-              memory: 64Mi
+              memory: 64Mi # TODO: Andrey: P2: Deploy on Canary and update based on actual usage
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -107,4 +107,4 @@ spec:
             secretName: pvc-autoscaler-tls
 
 
-# TODO: Overall, do test if metrics work at all through RBAC endpoint
+# TODO: Andrey: P2: Do test if metrics are served over HTTPS, as configured
