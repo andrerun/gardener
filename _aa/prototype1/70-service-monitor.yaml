@@ -1,0 +1,34 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  annotations:
+    resources.gardener.cloud/origin: garden/pvc-autoscaler
+  labels:
+    app: pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+    prometheus: aggregate # seed
+    resources.gardener.cloud/managed-by: gardener
+  name: aggregate-pvc-autoscaler
+  namespace: garden
+spec:
+  endpoints:
+    - metricRelabelings:
+        - action: keep
+          regex: ^(pvc_autoscaler_max_capacity_reached_total|pvc_autoscaler_resized_total|pvc_autoscaler_skipped_total|pvc_autoscaler_threshold_reached_total)$
+          sourceLabels:
+            - __name__
+      port: httpmetrics
+      scheme: http
+      tlsConfig:
+        insecureSkipVerify: true
+#      authorization:
+#        credentials:
+#          name: my-secret
+#          key: my-key-in-the-secret
+  namespaceSelector:
+    matchNames:
+      - garden
+  selector:
+    matchLabels:
+      app: pvc-autoscaler
+      gardener.cloud/role: pvc-autoscaler
