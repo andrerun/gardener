@@ -1,0 +1,29 @@
+# This service is not required as such. However, for Gardener metrics scraping to work, the scraped component must
+# ensure a service with certain network configuration (source: $PROJECT_ROOT/docs/operations/network_policies.md).
+
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    networking.resources.gardener.cloud/from-all-seed-scrape-targets-allowed-ports: '[{"port":8080,"protocol":"TCP"}]'
+    # networking.resources.gardener.cloud/from-all-seed-scrape-targets-allowed-ports: '[{"port":8443,"protocol":"TCP"}]' # For HTTPS mode
+    # networking.resources.gardener.cloud/from-world-to-ports: '[{"port":8443,"protocol":"TCP"}]' # TODO: Temporarily added for research access. Remove.
+  labels:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  name: pvc-autoscaler
+  namespace: garden
+spec:
+  ports:
+    - name: metrics
+      port: 8443
+      protocol: TCP
+      targetPort: https
+    - name: httpmetrics
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    app:  pvc-autoscaler
+    gardener.cloud/role: pvc-autoscaler
+  # type: LoadBalancer  # TODO: Temporarily added for research access. Remove.
