@@ -15,14 +15,14 @@ metadata:
   namespace: garden
 spec:
   ports:
-    - name: metrics
+    - name: secure-metrics
       port: 8443
       protocol: TCP
-      targetPort: https
-    - name: httpmetrics
+      targetPort: secure-metrics
+    - name: metrics
       port: 8080
       protocol: TCP
-      targetPort: 8080
+      targetPort: metrics
   selector:
     app:  pvc-autoscaler
     gardener.cloud/role: pvc-autoscaler

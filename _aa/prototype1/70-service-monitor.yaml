@@ -17,7 +17,7 @@ spec:
           regex: ^(pvc_autoscaler_max_capacity_reached_total|pvc_autoscaler_resized_total|pvc_autoscaler_skipped_total|pvc_autoscaler_threshold_reached_total)$
           sourceLabels:
             - __name__
-      port: httpmetrics
+      port: metrics
       scheme: http
       tlsConfig:
         insecureSkipVerify: true
