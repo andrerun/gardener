@@ -86,19 +86,6 @@ metadata:
   labels:
     app:  pvc-autoscaler
     gardener.cloud/role: pvc-autoscaler
-  name: pvc-autoscaler-metrics-reader
-rules:
-  - nonResourceURLs:
-      - /metrics
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  labels:
-    app:  pvc-autoscaler
-    gardener.cloud/role: pvc-autoscaler
   name: pvc-autoscaler-proxy
 rules:
   - apiGroups:
