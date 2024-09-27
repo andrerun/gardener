@@ -398,6 +398,11 @@ func (r *Reconciler) runReconcileSeedFlow(
 			Fn:           c.kubeAPIServerIngress.Deploy,
 			Dependencies: flow.NewTaskIDs(syncPointReadyForSystemComponents),
 		})
+		_ = g.Add(flow.Task{
+			Name:         "Deploying gardener-custom-metrics",
+			Fn:           c.pvcAutoscaler.Deploy,
+			Dependencies: flow.NewTaskIDs(syncPointReadyForSystemComponents),
+		})
 
 		// When the seed is the garden cluster then the following components are reconciled by the gardener-operator.
 		_ = g.Add(flow.Task{

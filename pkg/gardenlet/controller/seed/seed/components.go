@@ -7,6 +7,7 @@ package seed
 import (
 	"context"
 	"fmt"
+	"github.com/gardener/gardener/pkg/component/autoscaling/pvcautoscaler"
 
 	fluentbitv1alpha2 "github.com/fluent/fluent-operator/v2/apis/fluentbit/v1alpha2"
 	proberapi "github.com/gardener/dependency-watchdog/api/prober"
@@ -97,6 +98,7 @@ type components struct {
 	dwdWeeder                component.DeployWaiter
 	dwdProber                component.DeployWaiter
 	vpnAuthzServer           component.DeployWaiter
+	pvcAutoscaler            component.DeployWaiter
 
 	kubeAPIServerService component.Deployer
 	kubeAPIServerIngress component.Deployer
@@ -179,6 +181,10 @@ func (r *Reconciler) instantiateComponents(
 		return
 	}
 	c.vpnAuthzServer, err = r.newVPNAuthzServer()
+	if err != nil {
+		return
+	}
+	c.pvcAutoscaler, err = r.newPvcAutoscaler(secretsManager)
 	if err != nil {
 		return
 	}
@@ -736,6 +742,32 @@ func (r *Reconciler) newKubeStateMetrics() (component.DeployWaiter, error) {
 		v1beta1constants.PriorityClassNameSeedSystem600,
 		kubestatemetrics.SuffixSeed,
 	)
+}
+
+// newGardenerCustomMetrics creates a [component.Deployer] for the gardener-custom-metrics component.
+func (r *Reconciler) newPvcAutoscaler(secretsManager secretsmanager.Interface) (component.DeployWaiter, error) {
+	image, err := imagevector.Containers().FindImage(
+		imagevector.ContainerImageNamePvcAutoscaler,
+		imagevectorutils.RuntimeVersion(r.SeedVersion.String()),
+		imagevectorutils.TargetVersion(r.SeedVersion.String()))
+
+	if err != nil {
+		return nil, err
+	}
+
+	values := pvcautoscaler.Values{
+		Image:             image.String(),
+		KubernetesVersion: r.SeedVersion,
+	}
+
+	pvaDeployer := pvcautoscaler.New(r.GardenNamespace, values, r.SeedClientSet.Client(), secretsManager)
+
+	// TODO: Andrey: P2: Introduce a feature gate
+	// if !features.DefaultFeatureGate.Enabled(features.CustomMetricsHPAForAPIServer) {
+	//	pvaDeployer = component.OpDestroyWithoutWait(pvaDeployer)
+	// }
+
+	return pvaDeployer, nil
 }
 
 func (r *Reconciler) newPrometheusOperator() (component.DeployWaiter, error) {

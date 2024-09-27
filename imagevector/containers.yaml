@@ -720,7 +720,22 @@ images:
   repository: registry.k8s.io/cpa/cluster-proportional-autoscaler
   tag: "v1.8.9"
 
-# Istio
+  # Storage autoscaling
+- name: pvc-autoscaler
+  sourceRepository: github.com/gardener/pvc-autoscaler
+  repository: europe-docker.pkg.dev/gardener-project/releases/gardener/pvc-autoscaler
+  tag: "v0.1.1"
+  labels:
+    - name: 'gardener.cloud/cve-categorisation'
+      value:
+        network_exposure: 'private'
+        authentication_enforced: false
+        user_interaction: 'gardener-operator'
+        confidentiality_requirement: 'low'
+        integrity_requirement: 'high'
+        availability_requirement: 'high'
+
+  # Istio
 - name: istio-proxy
   sourceRepository: github.com/istio/istio
   repository: gcr.io/istio-release/proxyv2

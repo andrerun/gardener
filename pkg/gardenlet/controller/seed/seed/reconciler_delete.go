@@ -185,6 +185,10 @@ func (r *Reconciler) runDeleteSeedFlow(
 			Name: "Destroy Fluent Operator Custom Resources",
 			Fn:   component.OpDestroyAndWait(c.fluentOperatorCustomResources).Destroy,
 		})
+		destroyPvcAutoscaler = g.Add(flow.Task{
+			Name: "Destroy pvc-autoscaler",
+			Fn:   component.OpDestroyAndWait(c.pvcAutoscaler).Destroy,
+		})
 
 		// When the seed is the garden cluster then these components are reconciled by the gardener-operator.
 		destroyPlutono = g.Add(flow.Task{
@@ -257,6 +261,7 @@ func (r *Reconciler) runDeleteSeedFlow(
 			destroyVPNAuthzServer,
 			destroyIstio,
 			destroyFluentOperatorResources,
+			destroyPvcAutoscaler,
 			destroyPrometheusOperator,
 			destroyPlutono,
 			destroyKubeStateMetrics,
