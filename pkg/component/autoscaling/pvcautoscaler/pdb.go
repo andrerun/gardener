@@ -15,10 +15,11 @@
 package pvcautoscaler
 
 import (
-	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 	policyv1 "k8s.io/api/policy/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 )
 
 func (pva *pvcAutoscaler) pdb() *policyv1.PodDisruptionBudget {

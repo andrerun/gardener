@@ -7,19 +7,6 @@ metadata:
   name: pvc-autoscaler-leader-elector
   namespace: garden
 rules:
-# TODO: Andrey: P1: I don't think we need access to configmaps for leader election
-#  - apiGroups:
-#      - ""
-#    resources:
-#      - configmaps
-#    verbs:
-#      - get
-#      - list
-#      - watch
-#      - create
-#      - update
-#      - patch
-#      - delete
   - apiGroups:
       - coordination.k8s.io
     resources:

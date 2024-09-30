@@ -1,12 +1,12 @@
 package pvcautoscaler
 
 import (
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	"github.com/gardener/gardener/pkg/component/observability/monitoring/prometheus/aggregate"
 	monitoringutils "github.com/gardener/gardener/pkg/component/observability/monitoring/utils"
 	"github.com/gardener/gardener/pkg/utils"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	corev1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func (pva *pvcAutoscaler) serviceMonitor() *monitoringv1.ServiceMonitor {
@@ -22,7 +22,7 @@ func (pva *pvcAutoscaler) serviceMonitor() *monitoringv1.ServiceMonitor {
 			Endpoints: []monitoringv1.Endpoint{
 				{
 					Port:   metricsPortName,
-					Scheme: string(corev1.URISchemeHTTP),
+					Scheme: "http",
 					// Andrey: P2: Only needed with HTTPS metrics
 					//TLSConfig: &monitoringv1.TLSConfig{
 					//	InsecureSkipVerify: true,
