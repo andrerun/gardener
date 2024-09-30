@@ -16,18 +16,19 @@ package pvcautoscaler
 
 import (
 	"fmt"
-	secretsutils "github.com/gardener/gardener/pkg/utils/secrets"
+	"path/filepath"
+
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
-	"path/filepath"
 
 	v1beta1constants "github.com/gardener/gardener/pkg/apis/core/v1beta1/constants"
 	resourcesv1alpha1 "github.com/gardener/gardener/pkg/apis/resources/v1alpha1"
 	"github.com/gardener/gardener/pkg/utils"
+	secretsutils "github.com/gardener/gardener/pkg/utils/secrets"
 )
 
 const (
@@ -79,7 +80,7 @@ func (pva *pvcAutoscaler) deployment(serverSecretName string) *appsv1.Deployment
 						{
 							Args: []string{
 								fmt.Sprintf("--health-probe-bind-address=:%d", healthPort),
-								fmt.Sprintf("--metrics-bind-address=:8080 # 127.0.0.1:%d", metricsPort),
+								fmt.Sprintf("--metrics-bind-address=:%d", metricsPort),
 								"--leader-elect",
 								"--interval=60s",
 								"--prometheus-address=http://prometheus-cache.garden.svc.cluster.local:80",
