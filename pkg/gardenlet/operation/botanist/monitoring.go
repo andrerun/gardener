@@ -84,14 +84,16 @@ func (b *Botanist) DefaultPrometheus() (prometheus.Interface, error) {
 	}
 
 	values := prometheus.Values{
-		Name:                "shoot",
-		PriorityClassName:   v1beta1constants.PriorityClassNameShootControlPlane100,
-		StorageCapacity:     resource.MustParse(b.Seed.GetValidVolumeSize("20Gi")),
-		ClusterType:         component.ClusterTypeShoot,
-		Replicas:            b.Shoot.GetReplicas(1),
-		Retention:           ptr.To(monitoringv1.Duration("30d")),
-		RetentionSize:       "15GB",
-		RestrictToNamespace: true,
+		Name:                         "shoot",
+		PriorityClassName:            v1beta1constants.PriorityClassNameShootControlPlane100,
+		StorageCapacity:              resource.MustParse(b.Seed.GetValidVolumeSize("1Gi")),
+		StorageAutoscalingEnabled:    true,
+		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse("40Gi")), // TODO: Andrey: P2: Just 2x the old volume size for now. Let's get some actual field experience with pvc-autoscaler, before setting this to a larger value.
+		ClusterType:                  component.ClusterTypeShoot,
+		Replicas:                     b.Shoot.GetReplicas(1),
+		Retention:                    ptr.To(monitoringv1.Duration("30d")),
+		RetentionSize:                "15GB",
+		RestrictToNamespace:          true,
 		ResourceRequests: &corev1.ResourceList{
 			corev1.ResourceCPU:    resource.MustParse("10m"),
 			corev1.ResourceMemory: resource.MustParse("400M"),
