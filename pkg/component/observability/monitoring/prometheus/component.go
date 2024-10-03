@@ -66,6 +66,10 @@ type Values struct {
 	PriorityClassName string
 	// StorageCapacity is the storage capacity of Prometheus.
 	StorageCapacity resource.Quantity
+	// StorageAutoscalingEnabled - if true, storage will be automatically expanded when it approaches exhaustion.
+	StorageAutoscalingEnabled bool
+	// StorageAutoscalingMaxAllowed - The maximum size to which autoscaling will expand the storage volume. Nil means no limit.
+	StorageAutoscalingMaxAllowed *resource.Quantity
 	// Replicas is the number of replicas.
 	Replicas int32
 	// Retention is the duration for the data retention.

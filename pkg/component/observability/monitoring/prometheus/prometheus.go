@@ -87,6 +87,17 @@ func (p *prometheus) prometheus(cortexConfigMap *corev1.ConfigMap) *monitoringv1
 		},
 	}
 
+	if p.values.StorageAutoscalingEnabled {
+		pvcMetadata := &obj.Spec.CommonPrometheusFields.Storage.VolumeClaimTemplate.EmbeddedObjectMetadata
+		pvcMetadata.Annotations = map[string]string{
+			"pvc.autoscaling.gardener.cloud/is-enabled": "true",
+		}
+		if p.values.StorageAutoscalingMaxAllowed != nil {
+			pvcMetadata.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] =
+				p.values.StorageAutoscalingMaxAllowed.String()
+		}
+	}
+
 	if p.values.RestrictToNamespace {
 		obj.Spec.ServiceMonitorNamespaceSelector = nil
 		obj.Spec.PodMonitorNamespaceSelector = nil

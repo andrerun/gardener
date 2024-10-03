@@ -635,6 +635,10 @@ func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericT
 				},
 				VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
 					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							"pvc.autoscaling.gardener.cloud/is-enabled":   "true",
+							"pvc.autoscaling.gardener.cloud/max-capacity": "60Gi",
+						},
 						Name: valiPVCName,
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
@@ -643,7 +647,7 @@ func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericT
 						},
 						Resources: corev1.VolumeResourceRequirements{
 							Requests: map[corev1.ResourceName]resource.Quantity{
-								corev1.ResourceStorage: resource.MustParse("30Gi"),
+								corev1.ResourceStorage: resource.MustParse("1Gi"),
 							},
 						},
 					},
