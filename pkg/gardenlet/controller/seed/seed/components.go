@@ -7,10 +7,10 @@ package seed
 import (
 	"context"
 	"fmt"
-
 	fluentbitv1alpha2 "github.com/fluent/fluent-operator/v2/apis/fluentbit/v1alpha2"
 	proberapi "github.com/gardener/dependency-watchdog/api/prober"
 	weederapi "github.com/gardener/dependency-watchdog/api/weeder"
+	kubernetesutils "github.com/gardener/gardener/pkg/utils/kubernetes"
 	"github.com/go-logr/logr"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -197,6 +197,14 @@ func (r *Reconciler) instantiateComponents(
 	}
 
 	// observability components
+	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating observability volumes.
+	// However, in the case of reconciling an existing instance, the default class might have changed since
+	// the PVC was created. For a preexisting volume, check its actual class, don't assume it's still the default.
+	var isObservabilityStorageResizable bool
+	isObservabilityStorageResizable, err = kubernetesutils.IsDefaultStorageClassResizable(ctx, r.SeedClientSet.Client())
+	if err != nil {
+		return
+	}
 	c.fluentOperator, err = r.newFluentOperator()
 	if err != nil {
 		return
@@ -225,7 +233,7 @@ func (r *Reconciler) instantiateComponents(
 	if err != nil {
 		return
 	}
-	c.cachePrometheus, err = r.newCachePrometheus(log, seed, isManagedSeed)
+	c.cachePrometheus, err = r.newCachePrometheus(log, seed, isManagedSeed, isObservabilityStorageResizable)
 	if err != nil {
 		return
 	}
@@ -233,11 +241,12 @@ func (r *Reconciler) instantiateComponents(
 	if err != nil {
 		return
 	}
-	c.seedPrometheus, err = r.newSeedPrometheus(log, seed)
+	c.seedPrometheus, err = r.newSeedPrometheus(log, seed, isObservabilityStorageResizable)
 	if err != nil {
 		return
 	}
-	c.aggregatePrometheus, err = r.newAggregatePrometheus(log, seed, secretsManager, globalMonitoringSecretSeed, wildCardCertSecret, alertingSMTPSecret)
+	c.aggregatePrometheus, err = r.newAggregatePrometheus(
+		log, seed, secretsManager, globalMonitoringSecretSeed, wildCardCertSecret, alertingSMTPSecret, isObservabilityStorageResizable)
 	if err != nil {
 		return
 	}
@@ -539,19 +548,28 @@ func (r *Reconciler) newPlutono(seed *seedpkg.Seed, secretsManager secretsmanage
 	)
 }
 
-func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isManagedSeed bool) (component.DeployWaiter, error) {
+func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isManagedSeed bool, isStorageResizable bool) (component.DeployWaiter, error) {
 	additionalScrapeConfigs, err := cacheprometheus.AdditionalScrapeConfigs(isManagedSeed)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting additional scrape configs: %w", err)
 	}
 
+	var storageCapacityAsString string
+	if isStorageResizable {
+		storageCapacityAsString = "2Gi"
+	} else {
+		storageCapacityAsString = "10Gi"
+	}
+
 	return sharedcomponent.NewPrometheus(log, r.SeedClientSet.Client(), r.GardenNamespace, prometheus.Values{
-		Name:              "cache",
-		PriorityClassName: v1beta1constants.PriorityClassNameSeedSystem600,
-		StorageCapacity:   resource.MustParse(seed.GetValidVolumeSize("10Gi")),
-		Replicas:          1,
-		Retention:         ptr.To(monitoringv1.Duration("1d")),
-		RetentionSize:     "5GB",
+		Name:                         "cache",
+		PriorityClassName:            v1beta1constants.PriorityClassNameSeedSystem600,
+		StorageCapacity:              resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
+		StorageAutoscalingEnabled:    isStorageResizable,
+		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse(seed.GetValidVolumeSize("20Gi"))), // This conservative limit can be relaxed, once `pvc-autoscaler` proves itself in the field,
+		Replicas:                     1,
+		Retention:                    ptr.To(monitoringv1.Duration("1d")),
+		RetentionSize:                "5GB",
 		AdditionalPodLabels: map[string]string{
 			"networking.resources.gardener.cloud/to-" + v1beta1constants.LabelNetworkPolicySeedScrapeTargets: v1beta1constants.LabelNetworkPolicyAllowed,
 		},
@@ -567,14 +585,23 @@ func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isM
 	})
 }
 
-func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed) (component.DeployWaiter, error) {
+func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed, isStorageResizable bool) (component.DeployWaiter, error) {
+	var storageCapacityAsString string
+	if isStorageResizable {
+		storageCapacityAsString = "5Gi"
+	} else {
+		storageCapacityAsString = "100Gi"
+	}
+
 	return sharedcomponent.NewPrometheus(log, r.SeedClientSet.Client(), r.GardenNamespace, prometheus.Values{
-		Name:              "seed",
-		PriorityClassName: v1beta1constants.PriorityClassNameSeedSystem600,
-		StorageCapacity:   resource.MustParse(seed.GetValidVolumeSize("100Gi")),
-		Replicas:          1,
-		RetentionSize:     "85GB",
-		VPAMinAllowed:     &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("400Mi")},
+		Name:                         "seed",
+		PriorityClassName:            v1beta1constants.PriorityClassNameSeedSystem600,
+		StorageCapacity:              resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
+		StorageAutoscalingEnabled:    isStorageResizable,
+		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse(seed.GetValidVolumeSize("200Gi"))),
+		Replicas:                     1,
+		RetentionSize:                "85GB",
+		VPAMinAllowed:                &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("400Mi")},
 		AdditionalPodLabels: map[string]string{
 			"networking.resources.gardener.cloud/to-" + v1beta1constants.LabelNetworkPolicySeedScrapeTargets:            v1beta1constants.LabelNetworkPolicyAllowed,
 			"networking.resources.gardener.cloud/to-extensions-" + v1beta1constants.LabelNetworkPolicySeedScrapeTargets: v1beta1constants.LabelNetworkPolicyAllowed,
@@ -591,16 +618,25 @@ func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed) (com
 	})
 }
 
-func (r *Reconciler) newAggregatePrometheus(log logr.Logger, seed *seedpkg.Seed, secretsManager secretsmanager.Interface, globalMonitoringSecret, wildcardCertSecret, alertingSMTPSecret *corev1.Secret) (component.DeployWaiter, error) {
+func (r *Reconciler) newAggregatePrometheus(log logr.Logger, seed *seedpkg.Seed, secretsManager secretsmanager.Interface, globalMonitoringSecret, wildcardCertSecret, alertingSMTPSecret *corev1.Secret, isStorageResizable bool) (component.DeployWaiter, error) {
+	var storageCapacityAsString string
+	if isStorageResizable {
+		storageCapacityAsString = "2Gi"
+	} else {
+		storageCapacityAsString = "20Gi"
+	}
+
 	values := prometheus.Values{
-		Name:              "aggregate",
-		PriorityClassName: v1beta1constants.PriorityClassNameSeedSystem600,
-		StorageCapacity:   resource.MustParse(seed.GetValidVolumeSize("20Gi")),
-		Replicas:          1,
-		Retention:         ptr.To(monitoringv1.Duration("30d")),
-		RetentionSize:     "15GB",
-		ExternalLabels:    map[string]string{"seed": seed.GetInfo().Name},
-		VPAMinAllowed:     &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1000M")},
+		Name:                         "aggregate",
+		PriorityClassName:            v1beta1constants.PriorityClassNameSeedSystem600,
+		StorageCapacity:              resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
+		StorageAutoscalingEnabled:    isStorageResizable,
+		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse(seed.GetValidVolumeSize("40Gi"))),
+		Replicas:                     1,
+		Retention:                    ptr.To(monitoringv1.Duration("30d")),
+		RetentionSize:                "15GB",
+		ExternalLabels:               map[string]string{"seed": seed.GetInfo().Name},
+		VPAMinAllowed:                &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1000M")},
 		CentralConfigs: prometheus.CentralConfigs{
 			PrometheusRules: aggregateprometheus.CentralPrometheusRules(),
 			ScrapeConfigs:   aggregateprometheus.CentralScrapeConfigs(),

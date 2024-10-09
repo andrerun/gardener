@@ -149,9 +149,21 @@ func (v *vali) Deploy(ctx context.Context) error {
 		resources []client.Object
 	)
 
-	if v.values.Storage != nil {
-		if err := v.resizeOrDeleteValiDataVolumeIfStorageNotTheSame(ctx); err != nil {
-			return err
+	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating Vali volumes.
+	// However, the default class might have changed since then. For a preexisting volume, check its actual class,
+	// don't assume it's still the default.
+	isStorageResizable, err := kubernetesutils.IsDefaultStorageClassResizable(ctx, v.client)
+	if err != nil {
+		return err
+	}
+
+	if isStorageResizable {
+		// Do nothing, pvc-autoscaler will take care of resizing
+	} else {
+		if v.values.Storage != nil {
+			if err := v.resizeOrDeleteValiDataVolumeIfStorageNotTheSame(ctx); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -233,7 +245,7 @@ func (v *vali) Deploy(ctx context.Context) error {
 		valiConfigMap,
 		v.getService(),
 		v.getVPA(),
-		v.getStatefulSet(valiConfigMap.Name, telegrafConfigMapName, genericTokenKubeconfigSecretName),
+		v.getStatefulSet(valiConfigMap.Name, telegrafConfigMapName, genericTokenKubeconfigSecretName, isStorageResizable),
 		v.getServiceMonitor(),
 		v.getPrometheusRule(),
 	)
@@ -477,7 +489,7 @@ func (v *vali) getTelegrafConfigMap() (*corev1.ConfigMap, error) {
 	return configMap, nil
 }
 
-func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericTokenKubeconfigSecretName string) *appsv1.StatefulSet {
+func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericTokenKubeconfigSecretName string, isStorageResizable bool) *appsv1.StatefulSet {
 	var (
 		fsGroupChangeOnRootMismatch = corev1.FSGroupChangeOnRootMismatch
 
@@ -635,10 +647,6 @@ func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericT
 				},
 				VolumeClaimTemplates: []corev1.PersistentVolumeClaim{{
 					ObjectMeta: metav1.ObjectMeta{
-						Annotations: map[string]string{
-							"pvc.autoscaling.gardener.cloud/is-enabled":   "true",
-							"pvc.autoscaling.gardener.cloud/max-capacity": "60Gi",
-						},
 						Name: valiPVCName,
 					},
 					Spec: corev1.PersistentVolumeClaimSpec{
@@ -647,7 +655,7 @@ func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericT
 						},
 						Resources: corev1.VolumeResourceRequirements{
 							Requests: map[corev1.ResourceName]resource.Quantity{
-								corev1.ResourceStorage: resource.MustParse("1Gi"),
+								corev1.ResourceStorage: resource.MustParse("30Gi"),
 							},
 						},
 					},
@@ -656,8 +664,35 @@ func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericT
 		}
 	)
 
-	if v.values.Storage != nil {
-		statefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = *v.values.Storage
+	if isStorageResizable {
+		// If Vali's storage class supports resize, we'll use pvc-autoscaler to scale it
+		statefulSet.Spec.VolumeClaimTemplates[0].ObjectMeta.Annotations = map[string]string{
+			"pvc.autoscaling.gardener.cloud/is-enabled": "true",
+		}
+
+		if v.values.Storage != nil {
+			// Initial request is 5% of the static request which applies when scaling is off, but no less than 1Gi
+			initialRequest := resource.MustParse("1Gi")
+			asInt := v.values.Storage.ScaledValue(0)
+			percent5 := resource.NewQuantity((asInt+10)/20, resource.BinarySI)
+
+			if initialRequest.Cmp(*percent5) < 0 {
+				initialRequest = *percent5
+			}
+
+			maxAllowed := v.values.Storage.DeepCopy()
+			maxAllowed.Mul(2)
+
+			statefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = initialRequest
+			statefulSet.Spec.VolumeClaimTemplates[0].ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = maxAllowed.String()
+		} else {
+			statefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("1Gi")
+			statefulSet.Spec.VolumeClaimTemplates[0].ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = "60Gi"
+		}
+	} else {
+		if v.values.Storage != nil {
+			statefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = *v.values.Storage
+		}
 	}
 
 	if v.values.ShootNodeLoggingEnabled {

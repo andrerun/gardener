@@ -477,7 +477,7 @@ type Vali struct {
 
 // GardenVali contains configuration for the Vali in garden namespace.
 type GardenVali struct {
-	// Storage is the disk storage capacity of the central Vali.
+	// Storage is the disk storage capacity of the central Vali, when not subject to autoscaling.
 	// Defaults to 100Gi.
 	// +optional
 	Storage *resource.Quantity `json:"storage,omitempty" yaml:"storage,omitempty"`

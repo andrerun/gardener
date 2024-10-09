@@ -133,7 +133,7 @@ func New(ctx context.Context, o *operation.Operation) (*Botanist, error) {
 	if err != nil {
 		return nil, err
 	}
-	o.Shoot.Components.ControlPlane.Prometheus, err = b.DefaultPrometheus()
+	o.Shoot.Components.ControlPlane.Prometheus, err = b.DefaultPrometheus(ctx)
 	if err != nil {
 		return nil, err
 	}
