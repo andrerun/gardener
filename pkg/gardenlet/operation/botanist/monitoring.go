@@ -66,7 +66,7 @@ func (b *Botanist) DeployAlertManager(ctx context.Context) error {
 }
 
 // DefaultPrometheus creates a new prometheus deployer.
-func (b *Botanist) DefaultPrometheus() (prometheus.Interface, error) {
+func (b *Botanist) DefaultPrometheus(ctx context.Context) (prometheus.Interface, error) {
 	externalLabels := map[string]string{
 		"cluster":       b.Shoot.SeedNamespace,
 		"project":       b.Garden.Project.Name,
@@ -83,11 +83,26 @@ func (b *Botanist) DefaultPrometheus() (prometheus.Interface, error) {
 		externalLabels = utils.MergeStringMaps(externalLabels, b.Config.Monitoring.Shoot.ExternalLabels)
 	}
 
+	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating observability volumes.
+	// However, in the case of reconciling an existing instance, the default class might have changed since
+	// the PVC was created. For a preexisting volume, check its actual class, don't assume it's still the default.
+	isStorageResizable, err := kubernetesutils.IsDefaultStorageClassResizable(ctx, b.SeedClientSet.Client())
+	if err != nil {
+		return nil, err
+	}
+
+	var storageCapacityAsString string
+	if isStorageResizable {
+		storageCapacityAsString = "1Gi"
+	} else {
+		storageCapacityAsString = "20Gi"
+	}
+
 	values := prometheus.Values{
 		Name:                         "shoot",
 		PriorityClassName:            v1beta1constants.PriorityClassNameShootControlPlane100,
-		StorageCapacity:              resource.MustParse(b.Seed.GetValidVolumeSize("1Gi")),
-		StorageAutoscalingEnabled:    true,
+		StorageCapacity:              resource.MustParse(b.Seed.GetValidVolumeSize(storageCapacityAsString)),
+		StorageAutoscalingEnabled:    isStorageResizable,
 		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse("40Gi")), // TODO: Andrey: P2: Just 2x the old volume size for now. Let's get some actual field experience with pvc-autoscaler, before setting this to a larger value.
 		ClusterType:                  component.ClusterTypeShoot,
 		Replicas:                     b.Shoot.GetReplicas(1),
