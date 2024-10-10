@@ -1,46 +1,87 @@
-# Scaling Gardener Storage Volumes
+# Gardener Storage Volume Autoscaling<br/>_phase 1: observability volumes_
 ## _Design Specification_
-### Introduction
 
-TODO: Use those to build a description of the initiative. The big description goes here, the one in the project definition will only be as long as necessary to reflect goals and scope.
+---
+## Introduction
+A "one size fits all" strategy is a poor fit for the persistence volumes of Gardener observability workloads.
+The initiative outlined in this document aims to provide flexible, dynamic PV resizing where the underlying 
+infrastructure supports it.
 
-"Same size fits ALL" strategy is not optimal for the persistence volume sizes of Gardener observability workloads.
-This initiative aims at providing a more flexible and dynamic resizing of the PVs on infrastructures where the
-corresponding Storage Classes support the resize operation. The resizing is only in increasing dimensions. Shrinking PV usually is not directly supported by the infrastructure providers.
+#### Background:
+Logs are vital for understanding and troubleshooting Gardener clusters. Yet we operate under tight resource constraints
+and logging stack PVs default to a static size of 30GB, for ALL shoots. To prevent reaching this limit and bringing down
+the logging stack, there is a curator sidecar which periodically removes older logs. As a result, in some very large or
+busy clusters, this strategy allows retention of logs for only for 2-3 days.
 
-Background:
-Logs are vital for understanding and troubleshooting Gardener clusters, and yet we operate under tight resource boundaries. For example the PV in the logging stack are 30GB in size by default, for ALL clusters. To prevent reaching this limit and hence bringing down the logging stack, there is a curator side car removing older logs before exhausting the entire volumes. In some cases this strategy allows retention of logs only for 2, 3 days in very busy or large clusters.
+On the other hand, while some clusters experience storage starvation, others operate with just 5-10% of their observability
+volumes utilised.
 
-In the very same time, while we have a space starvation in some clusters, in others we observe quite the opposite. There are 5 to 10% only utilisation of the disk spaces.
+The present initiative is focused on observability storage volumes, and aims to:
+- Optimize volume utilisation
+- Ensure that high-throughput clusters receive sufficient observability storage space
 
-This initiative introduces a Gardener controller that can optionally resize PVs of the gardener application using PVs is storage classes allow it. In such way we can start small by default and then have the ability to grow the needed space up to a given boundary.
+The goals are achieved by the following means:
+- A Gardener controller is introduced to auto-scale PVs (expand only)
+- Observability volumes are selectively marked for action by said controller
+- Initial volume size is reduced
+- Where the storage infrastructure does not support volume resizing, the preexisting, static-size volume sizing strategy is employed
 
+The current initiative is limited to scaling the observability components - _Vali_, _Prometheus_, and _AlertManager_. However,
+the long term vision is, once the PV autoscaling implementation matures enough, to also use it to offer PV auto-scaling for customer volumes.
 
-The initial targets for PVC autoscaler are the observability components such as Vali, Prometheus and AlertManager, but once this component matures enough it should be possible to use it elsewhere.
+### Goals
+- General ability to autoscale PVs
+  - Ability is conditional on PVC's storage class supporting resizing
+  - Autoscaling is inactive by default
+  - Ability to selectively activate autoscaling per PVC
+  - Ability to trigger scaling based on relative volume utilisation ratio (used bytes/capacity bytes). Trigger threshold
+    ratio configurable via code.
+  - Ability to configure absolute upper scaling limit per PVC
+  - Autoscaling causes minimal interruption to scaled workloads
+- Autoscaling ability activated for observability volumes (`alertmanager`, `prometheus`, and `vali`) in seeds'
+  `garden` namespace, and in shoot namespaces.
+- Absolute upper scaling limit configured on each observability volume.
+- Reduce the initial size of a volume, when autoscaling is activated for that volume, if such reduction is aligned with
+  general Gardener goals (cost, reliability).
+- Implementation artefacts, directly created to satisfy the requirements of this document, follow Gardener guidelines.
+- Some metrics, which represent an overview of the PVC autoscaling state per seed, available through one or more of the seed
+  system's Prometheus instances.
+- Provide operational documentation for Gardener Operators
+  - Provide extension configuration documentation
+  - Provide extension operational documentation
+- Ability to enable/disable the feature per seed, via feature gate
 
-In order to reduce the amount of manual work when resizing PVCs once they reach a certain threshold and also to potentially reduce the initial size of PVCs, we need to implement dynamic resize support for persistent volumes.
+### Non-Goals
+- Ability to activate autoscaling on a group of PVCs, other than specifying each PVC individually. Activate by selector
+  or namespace is not required.
+- Ability to selectively deactivate autoscaling, e.g. by PVC selector or namespacen
+- Ability to scale a PVC if the storage class does not support resizing.
+- Ability to deactivate autoscaling for any of the observability volumes specified in the 'Goals' section.
 
-Note, that shrinking a PVC is not supported. A PVC size can only be increased, and not decreased.
+<mark>TBD</mark>
 
-[pvc-autoscaler] is a Kubernetes controller which periodically monitors persistent volumes and resizes them, if the
-available space or number of inodes drops below a certain threshold.
+### Notes:
+- Shrinking a PVC is not supported. A limitation imposed by the underlying infrastructure, PVC size can only be
+  increased, and not decreased.
+- The newly introduced auto-scaling mode is predicated on the underlying infrastructure supporting volume resizing.
+  This ability to is expressed through the K8s StorageClass type. The respective StorageClass must have
+  `allowVolumeExpansion: true`. See Volume expansion documentation for more details.
 
-Storage Classes MUST have allowVolumeExpansion: true. See Volume expansion documentation for more details.
-
-
-### PVC Autoscaler - Runtime Structure
+## PVC Autoscaler - Runtime Structure
 The overall runtime structure of the component is outlined in _Fig.1_:
 
 ![01-runtime_structure.png](resources%2F01-runtime_structure.png)
+
 _Fig.1: Runtime structure_
 
-The existing [pvc-autoscaler] application is deployed as a seed system component. It runs as a deployment in the seed's
-`garden` namespace. Its primary driving signal are the PVC metrics from the seed's cache Prometheus instance, which it
+For the role of a storage scaling controller, the existing, recently implemented [pvc-autoscaler] is used. It is
+integrated as a seed system component, and runs as a deployment in the seed's `garden` namespace.
+Its primary driving signal is the PVC metrics from the seed's cache Prometheus instance, which it
 periodically examines, and if capacity is found to be near exhaustion, `pvc-autoscaler` takes action by updating the
 PVC's storage request.
 
-In this initial iteration, `pvc-autoscaler` scales two categories of `vali` and `prometheus` volumes: those in shoot
-namespaces, and those in the seed's `garden` namespace. 
+In this initial iteration, `pvc-autoscaler` scales two categories of `vali`, `prometheus`, and `alertmanager` volumes:
+those in shoot namespaces, and those in the seed's `garden` namespace. 
 
 `pvc-autoscaler` publishes Prometheus metrics to anonymous scrapers via a `/metrics` HTTP endpoint. A `ServiceMonitor`
 object is created in the `garden` namespace, and drives the seed's `prometheus-operator` to configure a scrape on that
@@ -49,7 +90,7 @@ endpoint by `prometheus-seed`.
 `pvc-autoscaler` runs in active/passive replication mode, based on the standard leader election mechanism, supplied by
 the K8s controller runtime library. Only the active replica is shown in _Fig.1_.
 
-### PVC Autoscaler - Deployer Structure
+## PVC Autoscaler - Deployer Structure
 The `pvc-autoscaler` application and its supporting artefacts are deployed by `gardener`, as part of the seed
 reconciliation flow. 
 
@@ -75,7 +116,7 @@ the main container.
 The feature is deployed behind a dedicated feature gate. When disabled, `pvc-autoscaler` is removed, and related
 annotations are removed from the shoot control plane observability StatefulSets, and the seed observability StatefulSets.  
 
-#### Initial volume size and MaxAllowed
+### Initial volume size and MaxAllowed
 
 | Component type | Component            | Old size | Initial size | Max size |
 |----------------|----------------------|----------|--------------|----------|
@@ -86,8 +127,8 @@ annotations are removed from the shoot control plane observability StatefulSets,
 | Seed           | prometheus-seed      | 100Gi    | 5Gi          | 200Gi    |
 | Seed           | vali                 | 100Gi    | 5Gi          | 200Gi    | # TODO!!!!!!!!!!!!!!! Not implemented
 
-### Fugure Enhancements
-#### Metrics authorization
+## Future Enhancements
+### Metrics authorization
 `pvc-autoscaler` supports access control over its `/metrics` endpoint. This feature will not be utilised by the first
 implementation round. It is envisioned as a future enhancement. In that
 operation mode, the primary `pvc-autoscaler` publishes unauthorized, plain text metrics only on the loopback interface.
