@@ -7,7 +7,7 @@ A "one size fits all" strategy is a poor fit for the persistence volumes of Gard
 The initiative outlined in this document aims to provide flexible, dynamic PV resizing where the underlying 
 infrastructure supports it.
 
-#### Background:
+### Background:
 Logs are vital for understanding and troubleshooting Gardener clusters. Yet we operate under tight resource constraints
 and logging stack PVs default to a static size of 30GB, for ALL shoots. To prevent reaching this limit and bringing down
 the logging stack, there is a curator sidecar which periodically removes older logs. As a result, in some very large or
@@ -139,6 +139,79 @@ loopback port.
 
 ![03-runtime_structure_secure_metrics.png](resources%2F03-runtime_structure_secure_metrics.png)
 _Fig.3: Runtime structure with secure metrics_
+
+## Alternatives
+Detailed review of existing PVC autoscalers was performed as part of developing [pvc-autoscaler]. A detailed discussion
+of the findings is
+[available in the research notes](https://github.tools.sap/I746790/notes/tree/master/pvc-autoscaler#evaluate-existing-pvc-autoscalers).
+
+The following 3rd party PVC autoscalers were evaluated:
+- [topolvm/pvc-autoresizer](https://github.com/topolvm/pvc-autoresizer)
+- [lorenzophys/pvc-autoscaler](https://github.com/lorenzophys/pvc-autoscaler)
+- [DevOps-Nirvana/Kubernetes-Volume-Autoscaler](https://github.com/DevOps-Nirvana/Kubernetes-Volume-Autoscaler)
+
+### Alternative: topolvm/pvc-autoscaler
+**Overview:**
+An immature solution, closer to the proof-of-concept stage, than to the production-ready stage. Has some core
+design issues. The project is gaining a bit of traction, possibly because of no good alternatives in the market niche.
+
+**Recommendation:**
+To use it, we'd need to become the primary maintainer and rework core logic. The existing functionality
+does not have sufficient critical mass to justify the burden of coordinating with other maintainers.
+[pvc-autoscaler] is a better fit for us.
+
+**Details:**
+Works only on a golden path. Lacks the countermeasures to intermittent faults, necessary for reliable operation, e.g:
+- Reconciliation is aborted upon first fault, without retrying.
+- Silently skips a PVC when any of its metrics is missing - a PVC with exhausted capacity will not be scaled if it is
+  missing an unrelated inode metric.
+Does not emit events to support operating/troubleshooting.
+There is an inherent inefficiency coded in the very core logic, for the case where only a small fraction of PVCs are
+under scaling.
+On the positive side, the project it seems to be gaining a bit of traction, so rough edges will likely be smoothed over
+time.
+
+### Alternative: lorenzophys/pvc-autoscaler
+**Overview:**
+A decent minimal solution, in early alpha. Lacks some features needed by Gardener. Maintained but no longer actively
+developed.
+
+**Recommendation:**
+From the Gardener perspective, it has no advantages over [pvc-autoscaler], which has broader functional support.
+
+**Details:**
+The lack of inode scaling, event recorder, and exposed metrics, would mean that we'd need to implement these on our own.
+The lack of active development means that we would likely need to take over the project completely. 
+
+### Alternative: DevOps-Nirvana/Kubernetes-Volume-Autoscaler
+**Overview:**
+An (estimated) early alpha Python implementation. No longer actively developed. 
+
+**Recommendation:**
+From the Gardener perspective, it has no advantages over [pvc-autoscaler].
+
+**Details:**
+Uses a custom Prometheus query, which is an interesting approach. 
+
+### Alternative: Scale via `gardenlet`
+**Overview:**
+Scaling in `gardenlet` has no advantages. No point in complicating an already large `gardenlet`.
+Autoscaling is an ideal candidate for running as a separate service.
+<mark>TODO: </mark>
+
+**Recommendation:**
+
+**Details:**
+
+### Alternative: Business as usual
+**Overview:**
+<mark>TODO: Get utilisation metrics.</mark>
+
+**Recommendation:**
+
+**Details:**
+
+---
 
 [pvc-autoscaler]: https://github.com/gardener/pvc-autoscaler
 [kube-rbac-proxy]: https://github.com/brancz/kube-rbac-proxy 
