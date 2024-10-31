@@ -96,6 +96,11 @@ const (
 	// owner: @MartinWeindel @ScheererJ @axel7born @DockToFuture
 	// alpha: v1.104.0
 	NewVPN featuregate.Feature = "NewVPN"
+
+	// PVCAutoscalingForObservabilityVolumes enables capacity autoscaling for shoot and seed observability PVCs.
+	// owner @aanastas
+	// alpha: v1.107.0
+	PVCAutoscalingForObservabilityVolumes featuregate.Feature = "PVCAutoscalingForObservabilityVolumes"
 )
 
 // DefaultFeatureGate is the central feature gate map used by all gardener components.
@@ -123,18 +128,19 @@ var DefaultFeatureGate = utilfeature.DefaultMutableFeatureGate
 
 // AllFeatureGates is the list of all feature gates.
 var AllFeatureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-	HVPA:                      {Default: false, PreRelease: featuregate.Deprecated, LockToDefault: true},
-	HVPAForShootedSeed:        {Default: false, PreRelease: featuregate.Deprecated, LockToDefault: true},
-	VPAForETCD:                {Default: true, PreRelease: featuregate.GA, LockToDefault: true},
-	DefaultSeccompProfile:     {Default: false, PreRelease: featuregate.Alpha},
-	IPv6SingleStack:           {Default: false, PreRelease: featuregate.Alpha},
-	ShootManagedIssuer:        {Default: false, PreRelease: featuregate.Alpha},
-	ShootForceDeletion:        {Default: true, PreRelease: featuregate.Beta},
-	UseNamespacedCloudProfile: {Default: false, PreRelease: featuregate.Alpha},
-	VPAAndHPAForAPIServer:     {Default: true, PreRelease: featuregate.GA, LockToDefault: true},
-	ShootCredentialsBinding:   {Default: true, PreRelease: featuregate.Beta},
-	NewWorkerPoolHash:         {Default: false, PreRelease: featuregate.Alpha},
-	NewVPN:                    {Default: false, PreRelease: featuregate.Alpha},
+	HVPA:                                  {Default: false, PreRelease: featuregate.Deprecated, LockToDefault: true},
+	HVPAForShootedSeed:                    {Default: false, PreRelease: featuregate.Deprecated, LockToDefault: true},
+	VPAForETCD:                            {Default: true, PreRelease: featuregate.GA, LockToDefault: true},
+	DefaultSeccompProfile:                 {Default: false, PreRelease: featuregate.Alpha},
+	IPv6SingleStack:                       {Default: false, PreRelease: featuregate.Alpha},
+	ShootManagedIssuer:                    {Default: false, PreRelease: featuregate.Alpha},
+	ShootForceDeletion:                    {Default: true, PreRelease: featuregate.Beta},
+	UseNamespacedCloudProfile:             {Default: false, PreRelease: featuregate.Alpha},
+	VPAAndHPAForAPIServer:                 {Default: true, PreRelease: featuregate.GA, LockToDefault: true},
+	ShootCredentialsBinding:               {Default: true, PreRelease: featuregate.Beta},
+	NewWorkerPoolHash:                     {Default: false, PreRelease: featuregate.Alpha},
+	NewVPN:                                {Default: false, PreRelease: featuregate.Alpha},
+	PVCAutoscalingForObservabilityVolumes: {Default: false, PreRelease: featuregate.Alpha},
 }
 
 // GetFeatures returns a feature gate map with the respective specifications. Non-existing feature gates are ignored.

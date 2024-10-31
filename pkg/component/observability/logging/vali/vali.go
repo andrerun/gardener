@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"github.com/gardener/gardener/pkg/features"
 	"text/template"
 
 	"github.com/Masterminds/sprig/v3"
@@ -152,12 +153,15 @@ func (v *vali) Deploy(ctx context.Context) error {
 	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating Vali volumes.
 	// However, the default class might have changed since then. For a preexisting volume, check its actual class,
 	// don't assume it's still the default.
-	isStorageResizable, err := kubernetesutils.IsDefaultStorageClassResizable(ctx, v.client)
-	if err != nil {
-		return err
+	isStorageAutoscalingEnabled := features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes)
+	if isStorageAutoscalingEnabled {
+		var err error
+		if isStorageAutoscalingEnabled, err = kubernetesutils.IsDefaultStorageClassResizable(ctx, v.client); err != nil {
+			return err
+		}
 	}
 
-	if isStorageResizable {
+	if isStorageAutoscalingEnabled {
 		// Do nothing, pvc-autoscaler will take care of resizing
 	} else {
 		if v.values.Storage != nil {
@@ -245,7 +249,7 @@ func (v *vali) Deploy(ctx context.Context) error {
 		valiConfigMap,
 		v.getService(),
 		v.getVPA(),
-		v.getStatefulSet(valiConfigMap.Name, telegrafConfigMapName, genericTokenKubeconfigSecretName, isStorageResizable),
+		v.getStatefulSet(valiConfigMap.Name, telegrafConfigMapName, genericTokenKubeconfigSecretName, isStorageAutoscalingEnabled),
 		v.getServiceMonitor(),
 		v.getPrometheusRule(),
 	)
@@ -489,7 +493,10 @@ func (v *vali) getTelegrafConfigMap() (*corev1.ConfigMap, error) {
 	return configMap, nil
 }
 
-func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericTokenKubeconfigSecretName string, isStorageResizable bool) *appsv1.StatefulSet {
+func (v *vali) getStatefulSet(
+	valiConfigMapName, telegrafConfigMapName, genericTokenKubeconfigSecretName string,
+	isStorageAutoscalingEnabled bool) *appsv1.StatefulSet {
+
 	var (
 		fsGroupChangeOnRootMismatch = corev1.FSGroupChangeOnRootMismatch
 
@@ -664,34 +671,37 @@ func (v *vali) getStatefulSet(valiConfigMapName, telegrafConfigMapName, genericT
 		}
 	)
 
-	if isStorageResizable {
+	pvcTemplate := statefulSet.Spec.VolumeClaimTemplates[0]
+	if isStorageAutoscalingEnabled {
 		// If Vali's storage class supports resize, we'll use pvc-autoscaler to scale it
-		statefulSet.Spec.VolumeClaimTemplates[0].ObjectMeta.Annotations = map[string]string{
-			"pvc.autoscaling.gardener.cloud/is-enabled": "true",
+		if pvcTemplate.ObjectMeta.Annotations == nil {
+			pvcTemplate.ObjectMeta.Annotations = make(map[string]string)
 		}
+		pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"] = "true"
 
 		if v.values.Storage != nil {
-			// Initial request is 5% of the static request which applies when scaling is off, but no less than 1Gi
-			initialRequest := resource.MustParse("1Gi")
-			asInt := v.values.Storage.ScaledValue(0)
-			percent5 := resource.NewQuantity((asInt+10)/20, resource.BinarySI)
+			// In autoscaling mode, the initial request and MaxAllowed are based on the static request, specified for
+			// "autoscaling off" mode: the autoscaling initial request is 5% of the static request, but no less than 1Gi
+			autoscalingRequest := resource.MustParse("1Gi")
+			staticRequestAsInt := v.values.Storage.ScaledValue(0)
+			staticPercent5 := resource.NewQuantity((staticRequestAsInt+10)/20, resource.BinarySI)
 
-			if initialRequest.Cmp(*percent5) < 0 {
-				initialRequest = *percent5
+			if autoscalingRequest.Cmp(*staticPercent5) < 0 {
+				autoscalingRequest = *staticPercent5
 			}
 
 			maxAllowed := v.values.Storage.DeepCopy()
 			maxAllowed.Mul(2)
 
-			statefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = initialRequest
-			statefulSet.Spec.VolumeClaimTemplates[0].ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = maxAllowed.String()
+			pvcTemplate.Spec.Resources.Requests[corev1.ResourceStorage] = autoscalingRequest
+			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = maxAllowed.String()
 		} else {
-			statefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("1Gi")
-			statefulSet.Spec.VolumeClaimTemplates[0].ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = "60Gi"
+			pvcTemplate.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("1Gi")
+			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = "60Gi"
 		}
 	} else {
 		if v.values.Storage != nil {
-			statefulSet.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = *v.values.Storage
+			pvcTemplate.Spec.Resources.Requests[corev1.ResourceStorage] = *v.values.Storage
 		}
 	}
 

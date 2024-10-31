@@ -7,6 +7,7 @@ package botanist
 import (
 	"context"
 	"fmt"
+	"github.com/gardener/gardener/pkg/features"
 	"strconv"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -86,13 +87,16 @@ func (b *Botanist) DefaultPrometheus(ctx context.Context) (prometheus.Interface,
 	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating observability volumes.
 	// However, in the case of reconciling an existing instance, the default class might have changed since
 	// the PVC was created. For a preexisting volume, check its actual class, don't assume it's still the default.
-	isStorageResizable, err := kubernetesutils.IsDefaultStorageClassResizable(ctx, b.SeedClientSet.Client())
-	if err != nil {
+	var isStorageAutoscalingEnabled bool
+	if isStorageResizable, err := kubernetesutils.IsDefaultStorageClassResizable(ctx, b.SeedClientSet.Client()); err == nil {
+		isStorageAutoscalingEnabled =
+			isStorageResizable && features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes)
+	} else {
 		return nil, err
 	}
 
 	var storageCapacityAsString string
-	if isStorageResizable {
+	if isStorageAutoscalingEnabled {
 		storageCapacityAsString = "1Gi"
 	} else {
 		storageCapacityAsString = "20Gi"
@@ -102,8 +106,8 @@ func (b *Botanist) DefaultPrometheus(ctx context.Context) (prometheus.Interface,
 		Name:                         "shoot",
 		PriorityClassName:            v1beta1constants.PriorityClassNameShootControlPlane100,
 		StorageCapacity:              resource.MustParse(b.Seed.GetValidVolumeSize(storageCapacityAsString)),
-		StorageAutoscalingEnabled:    isStorageResizable,
-		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse("40Gi")), // TODO: Andrey: P2: Just 2x the old volume size for now. Let's get some actual field experience with pvc-autoscaler, before setting this to a larger value.
+		StorageAutoscalingEnabled:    isStorageAutoscalingEnabled,
+		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse("40Gi")),
 		ClusterType:                  component.ClusterTypeShoot,
 		Replicas:                     b.Shoot.GetReplicas(1),
 		Retention:                    ptr.To(monitoringv1.Duration("30d")),
