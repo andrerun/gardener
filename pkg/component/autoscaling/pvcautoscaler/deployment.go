@@ -84,7 +84,6 @@ func (pva *pvcAutoscaler) deployment(serverSecretName string) *appsv1.Deployment
 								"--leader-elect",
 								"--interval=60s",
 								"--prometheus-address=http://prometheus-cache.garden.svc.cluster.local:80",
-								//"--namespace=" + pva.namespace,
 							},
 							Command: []string{"/manager"},
 							Image:   pva.values.Image,
