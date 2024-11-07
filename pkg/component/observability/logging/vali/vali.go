@@ -245,11 +245,12 @@ func (v *vali) Deploy(ctx context.Context) error {
 
 	valiConfigMap := v.getValiConfigMap()
 
+	sts := v.getStatefulSet(valiConfigMap.Name, telegrafConfigMapName, genericTokenKubeconfigSecretName, isStorageAutoscalingEnabled)
 	resources = append(resources,
 		valiConfigMap,
 		v.getService(),
 		v.getVPA(),
-		v.getStatefulSet(valiConfigMap.Name, telegrafConfigMapName, genericTokenKubeconfigSecretName, isStorageAutoscalingEnabled),
+		sts,
 		v.getServiceMonitor(),
 		v.getPrometheusRule(),
 	)
@@ -259,6 +260,17 @@ func (v *vali) Deploy(ctx context.Context) error {
 	}
 
 	serializedObjects, err := registry.SerializedObjects()
+	if err != nil {
+		return err
+	}
+
+	err = monitoringutils.EnableAutoscalingOnExistingPVCs(
+		ctx, v.client, v.namespace, sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/max-capacity"],
+		map[string]string{
+			v1beta1constants.GardenRole: v1beta1constants.GardenRoleLogging,
+			v1beta1constants.LabelRole:  "logging",
+			v1beta1constants.LabelApp:   valiName,
+		})
 	if err != nil {
 		return err
 	}
@@ -671,7 +683,7 @@ func (v *vali) getStatefulSet(
 		}
 	)
 
-	pvcTemplate := statefulSet.Spec.VolumeClaimTemplates[0]
+	pvcTemplate := &statefulSet.Spec.VolumeClaimTemplates[0]
 	if isStorageAutoscalingEnabled {
 		// If Vali's storage class supports resize, we'll use pvc-autoscaler to scale it
 		if pvcTemplate.ObjectMeta.Annotations == nil {

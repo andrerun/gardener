@@ -248,6 +248,18 @@ func (p *prometheus) Deploy(ctx context.Context) error {
 		return err
 	}
 
+	err = monitoringutils.EnableAutoscalingOnExistingPVCs(
+		ctx, p.client, p.namespace, p.values.StorageAutoscalingMaxAllowed.String(),
+		map[string]string{
+			"app.kubernetes.io/instance":   p.values.Name,
+			"app.kubernetes.io/managed-by": "prometheus-operator",
+			"app.kubernetes.io/name":       "prometheus",
+			"prometheus":                   p.values.Name,
+		})
+	if err != nil {
+		return err
+	}
+
 	if err := managedresources.CreateForSeedWithLabels(ctx, p.client, p.namespace, p.name(), false, map[string]string{v1beta1constants.LabelCareConditionType: v1beta1constants.ObservabilityComponentsHealthy}, resources); err != nil {
 		return err
 	}
