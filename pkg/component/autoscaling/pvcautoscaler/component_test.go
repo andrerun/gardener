@@ -17,8 +17,12 @@ package pvcautoscaler
 import (
 	"context"
 	"github.com/Masterminds/semver/v3"
+	gardencorev1beta1 "github.com/gardener/gardener/pkg/apis/core/v1beta1"
 	"github.com/gardener/gardener/pkg/component/observability/monitoring/prometheus/aggregate"
 	monitoringutils "github.com/gardener/gardener/pkg/component/observability/monitoring/utils"
+	"github.com/gardener/gardener/pkg/utils/retry"
+	retryfake "github.com/gardener/gardener/pkg/utils/retry/fake"
+	"github.com/gardener/gardener/pkg/utils/test"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/types"
@@ -623,117 +627,116 @@ var _ = Describe("pvcAutoscaler", func() {
 			Expect(managedResource).To(consistOf(expectedObjects...))
 		})
 	})
-	/*
-		Describe("#Destroy", func() {
-			It("should successfully destroy all resources", func() {
-				Expect(c.Create(ctx, managedResource)).To(Succeed())
-				Expect(c.Create(ctx, managedResourceSecret)).To(Succeed())
 
-				Expect(component.Destroy(ctx)).To(Succeed())
+	Describe("#Destroy", func() {
+		It("should successfully destroy all resources", func() {
+			Expect(c.Create(ctx, managedResource)).To(Succeed())
+			Expect(c.Create(ctx, managedResourceSecret)).To(Succeed())
 
-				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
-				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(BeNotFoundError())
-			})
+			Expect(component.Destroy(ctx)).To(Succeed())
+
+			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
+			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(BeNotFoundError())
 		})
+	})
 
-		Context("waiting functions", func() {
-			var (
-				fakeOps   *retryfake.Ops
-				resetVars func()
+	Context("waiting functions", func() {
+		var (
+			fakeOps   *retryfake.Ops
+			resetVars func()
+		)
+
+		BeforeEach(func() {
+			fakeOps = &retryfake.Ops{MaxAttempts: 1}
+			resetVars = test.WithVars(
+				&retry.Until, fakeOps.Until,
+				&retry.UntilTimeout, fakeOps.UntilTimeout,
 			)
+		})
 
-			BeforeEach(func() {
-				fakeOps = &retryfake.Ops{MaxAttempts: 1}
-				resetVars = test.WithVars(
-					&retry.Until, fakeOps.Until,
-					&retry.UntilTimeout, fakeOps.UntilTimeout,
-				)
+		AfterEach(func() {
+			resetVars()
+		})
+
+		Describe("#Wait", func() {
+			It("should fail when the ManagedResource is missing", func() {
+				Expect(component.Wait(ctx)).To(MatchError(ContainSubstring("not found")))
 			})
 
-			AfterEach(func() {
-				resetVars()
-			})
+			It("should fail because the ManagedResource doesn't become healthy", func() {
+				fakeOps.MaxAttempts = 2
 
-			Describe("#Wait", func() {
-				It("should fail when the ManagedResource is missing", func() {
-					Expect(component.Wait(ctx)).To(MatchError(ContainSubstring("not found")))
-				})
-
-				It("should fail because the ManagedResource doesn't become healthy", func() {
-					fakeOps.MaxAttempts = 2
-
-					Expect(c.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:       managedResourceName,
-							Namespace:  namespace,
-							Generation: 1,
-						},
-						Status: resourcesv1alpha1.ManagedResourceStatus{
-							ObservedGeneration: 1,
-							Conditions: []gardencorev1beta1.Condition{
-								{
-									Type:   resourcesv1alpha1.ResourcesApplied,
-									Status: gardencorev1beta1.ConditionFalse,
-								},
-								{
-									Type:   resourcesv1alpha1.ResourcesHealthy,
-									Status: gardencorev1beta1.ConditionFalse,
-								},
+				Expect(c.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       managedResourceName,
+						Namespace:  namespace,
+						Generation: 1,
+					},
+					Status: resourcesv1alpha1.ManagedResourceStatus{
+						ObservedGeneration: 1,
+						Conditions: []gardencorev1beta1.Condition{
+							{
+								Type:   resourcesv1alpha1.ResourcesApplied,
+								Status: gardencorev1beta1.ConditionFalse,
+							},
+							{
+								Type:   resourcesv1alpha1.ResourcesHealthy,
+								Status: gardencorev1beta1.ConditionFalse,
 							},
 						},
-					})).To(Succeed())
+					},
+				})).To(Succeed())
 
-					Expect(component.Wait(context.Background())).To(MatchError(ContainSubstring("is not healthy")))
-				})
-
-				It("should successfully wait for the managed resource to become healthy", func() {
-					fakeOps.MaxAttempts = 2
-
-					Expect(c.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:       managedResourceName,
-							Namespace:  namespace,
-							Generation: 1,
-						},
-						Status: resourcesv1alpha1.ManagedResourceStatus{
-							ObservedGeneration: 1,
-							Conditions: []gardencorev1beta1.Condition{
-								{
-									Type:   resourcesv1alpha1.ResourcesApplied,
-									Status: gardencorev1beta1.ConditionTrue,
-								},
-								{
-									Type:   resourcesv1alpha1.ResourcesHealthy,
-									Status: gardencorev1beta1.ConditionTrue,
-								},
-							},
-						},
-					})).To(Succeed())
-
-					Expect(component.Wait(context.Background())).To(Succeed())
-				})
+				Expect(component.Wait(context.Background())).To(MatchError(ContainSubstring("is not healthy")))
 			})
 
-			Describe("WaitCleanup()", func() {
-				It("should fail when the wait for the managed resource deletion times out", func() {
-					fakeOps.MaxAttempts = 2
+			It("should successfully wait for the managed resource to become healthy", func() {
+				fakeOps.MaxAttempts = 2
 
-					managedResource := &resourcesv1alpha1.ManagedResource{
-						ObjectMeta: metav1.ObjectMeta{
-							Name:      managedResourceName,
-							Namespace: namespace,
+				Expect(c.Create(context.Background(), &resourcesv1alpha1.ManagedResource{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:       managedResourceName,
+						Namespace:  namespace,
+						Generation: 1,
+					},
+					Status: resourcesv1alpha1.ManagedResourceStatus{
+						ObservedGeneration: 1,
+						Conditions: []gardencorev1beta1.Condition{
+							{
+								Type:   resourcesv1alpha1.ResourcesApplied,
+								Status: gardencorev1beta1.ConditionTrue,
+							},
+							{
+								Type:   resourcesv1alpha1.ResourcesHealthy,
+								Status: gardencorev1beta1.ConditionTrue,
+							},
 						},
-					}
+					},
+				})).To(Succeed())
 
-					Expect(c.Create(ctx, managedResource)).To(Succeed())
-
-					Expect(component.WaitCleanup(ctx)).To(MatchError(ContainSubstring("still exists")))
-				})
-
-				It("should not return an error when it's already removed", func() {
-					Expect(component.WaitCleanup(ctx)).To(Succeed())
-				})
+				Expect(component.Wait(context.Background())).To(Succeed())
 			})
 		})
-	*/
+
+		Describe("WaitCleanup()", func() {
+			It("should fail when the wait for the managed resource deletion times out", func() {
+				fakeOps.MaxAttempts = 2
+
+				managedResource := &resourcesv1alpha1.ManagedResource{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      managedResourceName,
+						Namespace: namespace,
+					},
+				}
+
+				Expect(c.Create(ctx, managedResource)).To(Succeed())
+
+				Expect(component.WaitCleanup(ctx)).To(MatchError(ContainSubstring("still exists")))
+			})
+
+			It("should not return an error when it's already removed", func() {
+				Expect(component.WaitCleanup(ctx)).To(Succeed())
+			})
+		})
+	})
 })

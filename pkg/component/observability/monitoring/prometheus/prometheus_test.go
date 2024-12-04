@@ -62,6 +62,8 @@ var _ = Describe("Prometheus", func() {
 		priorityClassName                     = "priority-class"
 		replicas                        int32 = 1
 		storageCapacity                       = resource.MustParse("1337Gi")
+		storageAutoscalingMinThreshold        = resource.MustParse("2Gi")
+		storageAutoscalingMaxAllowed          = resource.MustParse("7777Gi")
 		retention                             = monitoringv1.Duration("1d")
 		retentionSize                         = monitoringv1.ByteSize("5GB")
 		externalLabels                        = map[string]string{"seed": "test"}
@@ -94,7 +96,7 @@ honor_labels: true`
 		serviceAccount                      *corev1.ServiceAccount
 		service                             *corev1.Service
 		clusterRoleBinding                  *rbacv1.ClusterRoleBinding
-		prometheusFor                       func([]alertmanager, bool) *monitoringv1.Prometheus
+		prometheusFor                       func([]alertmanager, bool, bool) *monitoringv1.Prometheus
 		vpa                                 *vpaautoscalingv1.VerticalPodAutoscaler
 		ingress                             *networkingv1.Ingress
 		prometheusRule                      *monitoringv1.PrometheusRule
@@ -209,7 +211,10 @@ honor_labels: true`
 				Namespace: namespace,
 			}},
 		}
-		prometheusFor = func(alertmanagers []alertmanager, restrictToNamespace bool) *monitoringv1.Prometheus {
+		prometheusFor = func(
+			alertmanagers []alertmanager,
+			restrictToNamespace, isStorageAutoscalingEnabled bool) *monitoringv1.Prometheus {
+
 			obj := &monitoringv1.Prometheus{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      name,
@@ -307,6 +312,16 @@ honor_labels: true`
 							Action:       "drop",
 						}},
 					})
+			}
+
+			if isStorageAutoscalingEnabled {
+				pvc := &obj.Spec.CommonPrometheusFields.Storage.VolumeClaimTemplate
+				if pvc.Annotations == nil {
+					pvc.Annotations = make(map[string]string)
+				}
+				pvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"] = "true"
+				pvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = storageAutoscalingMaxAllowed.String()
+				pvc.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = storageAutoscalingMinThreshold.String()
 			}
 
 			return obj
@@ -593,7 +608,7 @@ honor_labels: true`
 					serviceAccount,
 					service,
 					clusterRoleBinding,
-					prometheusFor(nil, false),
+					prometheusFor(nil, false, false),
 					vpa,
 					prometheusRule,
 					scrapeConfig,
@@ -630,7 +645,7 @@ honor_labels: true`
 						serviceAccount,
 						service,
 						clusterRoleBinding,
-						prometheusFor(nil, false),
+						prometheusFor(nil, false, false),
 						vpa,
 						prometheusRule,
 						scrapeConfig,
@@ -664,7 +679,7 @@ honor_labels: true`
 						serviceAccount,
 						service,
 						clusterRoleBinding,
-						prometheusFor(nil, true),
+						prometheusFor(nil, true, false),
 						vpa,
 						prometheusRule,
 						scrapeConfig,
@@ -679,7 +694,7 @@ honor_labels: true`
 			When("ingress is configured", func() {
 				test := func() {
 					It("should successfully deploy all resources", func() {
-						prometheusObj := prometheusFor(nil, false)
+						prometheusObj := prometheusFor(nil, false, false)
 						prometheusObj.Spec.ExternalURL = "https://" + ingressHost
 
 						prometheusRule.Namespace = namespace
@@ -723,7 +738,7 @@ honor_labels: true`
 						})
 
 						It("should successfully deploy all resources", func() {
-							prometheusObj := prometheusFor(nil, false)
+							prometheusObj := prometheusFor(nil, false, false)
 							prometheusObj.Spec.ExternalURL = "https://" + ingressHost
 							ingress.Annotations["nginx.ingress.kubernetes.io/server-snippet"] = `location /-/reload {
   return 403;
@@ -788,7 +803,7 @@ location /api/v1/targets {
 						serviceAccount,
 						service,
 						clusterRoleBinding,
-						prometheusFor([]alertmanager{{name: alertmanagerName}}, false),
+						prometheusFor([]alertmanager{{name: alertmanagerName}}, false, false),
 						vpa,
 						prometheusRule,
 						scrapeConfig,
@@ -819,6 +834,7 @@ location /api/v1/targets {
 								[]alertmanager{
 									{name: alertmanagerName},
 									{name: alertmanagerName2, namespace: &alertmanagerNamespace2}},
+								false,
 								false),
 							vpa,
 							prometheusRule,
@@ -843,7 +859,7 @@ location /api/v1/targets {
 						})
 
 						It("should successfully deploy all resources", func() {
-							prometheusObj := prometheusFor([]alertmanager{{name: alertmanagerName}}, false)
+							prometheusObj := prometheusFor([]alertmanager{{name: alertmanagerName}}, false, false)
 							prometheusObj.Spec.AdditionalAlertManagerConfigs = &corev1.SecretKeySelector{
 								LocalObjectReference: corev1.LocalObjectReference{Name: secretAdditionalAlertmanagerConfigs.Name},
 								Key:                  "configs.yaml",
@@ -893,7 +909,7 @@ basic_auth:
 						})
 
 						It("should successfully deploy all resources", func() {
-							prometheusObj := prometheusFor([]alertmanager{{name: alertmanagerName}}, false)
+							prometheusObj := prometheusFor([]alertmanager{{name: alertmanagerName}}, false, false)
 							prometheusObj.Spec.AdditionalAlertManagerConfigs = &corev1.SecretKeySelector{
 								LocalObjectReference: corev1.LocalObjectReference{Name: secretAdditionalAlertmanagerConfigs.Name},
 								Key:                  "configs.yaml",
@@ -951,7 +967,7 @@ tls_config:
 						metav1.SetMetaDataLabel(&serviceMonitor.ObjectMeta, "prometheus", name)
 						metav1.SetMetaDataLabel(&podMonitor.ObjectMeta, "prometheus", name)
 
-						prometheus := prometheusFor([]alertmanager{{name: alertmanagerName}}, false)
+						prometheus := prometheusFor([]alertmanager{{name: alertmanagerName}}, false, false)
 						prometheus.Spec.Alerting.Alertmanagers[0].AlertRelabelConfigs = append(
 							prometheus.Spec.Alerting.Alertmanagers[0].AlertRelabelConfigs,
 							monitoringv1.RelabelConfig{
@@ -987,7 +1003,7 @@ tls_config:
 				})
 
 				It("should successfully deploy all resources", func() {
-					prometheusObj := prometheusFor(nil, false)
+					prometheusObj := prometheusFor(nil, false, false)
 					prometheusObj.Spec.Replicas = ptr.To(int32(2))
 
 					prometheusRule.Namespace = namespace
@@ -1019,7 +1035,7 @@ tls_config:
 				})
 
 				It("should successfully deploy all resources", func() {
-					prometheusObj := prometheusFor(nil, false)
+					prometheusObj := prometheusFor(nil, false, false)
 					prometheusObj.Spec.ScrapeTimeout = "10s"
 
 					prometheusRule.Namespace = namespace
@@ -1089,7 +1105,7 @@ query_range:
 					}
 					Expect(kubernetesutils.MakeUnique(cortexConfigMap)).To(Succeed())
 
-					prometheusObj := prometheusFor(nil, false)
+					prometheusObj := prometheusFor(nil, false, false)
 					prometheusObj.Spec.Containers = append(prometheusObj.Spec.Containers, corev1.Container{
 						Name:            "cortex",
 						Image:           cortexImage,
@@ -1160,7 +1176,7 @@ query_range:
 				})
 
 				It("should successfully deploy all resources", func() {
-					prometheusObj := prometheusFor(nil, false)
+					prometheusObj := prometheusFor(nil, false, false)
 					prometheusObj.Spec.RemoteWrite = []monitoringv1.RemoteWriteSpec{{
 						URL: "rw-url",
 						WriteRelabelConfigs: []monitoringv1.RelabelConfig{{
@@ -1200,7 +1216,7 @@ query_range:
 					})
 
 					It("should successfully deploy all resources", func() {
-						prometheusObj := prometheusFor(nil, false)
+						prometheusObj := prometheusFor(nil, false, false)
 						prometheusObj.Spec.RemoteWrite = []monitoringv1.RemoteWriteSpec{{
 							URL: "rw-url",
 							WriteRelabelConfigs: []monitoringv1.RelabelConfig{{
@@ -1323,7 +1339,7 @@ query_range:
 						serviceAccount,
 						service,
 						clusterRoleBinding,
-						prometheusFor(nil, false),
+						prometheusFor(nil, false, false),
 						vpa,
 						prometheusRule,
 						scrapeConfig,
@@ -1368,7 +1384,7 @@ query_range:
 							serviceAccount,
 							service,
 							clusterRoleBinding,
-							prometheusFor(nil, false),
+							prometheusFor(nil, false, false),
 							vpa,
 							prometheusRule,
 							scrapeConfig,
@@ -1383,6 +1399,137 @@ query_range:
 							clusterRoleBindingTarget,
 						))
 					})
+				})
+			})
+
+			When("storage autoscaling is enabled", func() {
+				var (
+					preexistingPvcName = "preexisting-pvc"
+				)
+
+				BeforeEach(func() {
+					Expect(fakeClient.Create(ctx, &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      preexistingPvcName,
+							Namespace: namespace,
+							Labels: map[string]string{
+								"app.kubernetes.io/instance":   name,
+								"app.kubernetes.io/managed-by": "prometheus-operator",
+								"app.kubernetes.io/name":       "prometheus",
+								"prometheus":                   name,
+							},
+						},
+					})).To(Succeed())
+					values.StorageAutoscalingEnabled = true
+					values.StorageAutoscalingMinThreshold = ptr.To(storageAutoscalingMinThreshold)
+					values.StorageAutoscalingMaxAllowed = ptr.To(storageAutoscalingMaxAllowed)
+				})
+
+				It("should successfully deploy all resources", func() {
+					prometheusRule.Namespace = namespace
+					metav1.SetMetaDataLabel(&prometheusRule.ObjectMeta, "prometheus", name)
+					metav1.SetMetaDataLabel(&scrapeConfig.ObjectMeta, "prometheus", name)
+					metav1.SetMetaDataLabel(&serviceMonitor.ObjectMeta, "prometheus", name)
+					metav1.SetMetaDataLabel(&podMonitor.ObjectMeta, "prometheus", name)
+
+					Expect(managedResource).To(consistOf(
+						serviceAccount,
+						service,
+						clusterRoleBinding,
+						prometheusFor(nil, false, true),
+						vpa,
+						prometheusRule,
+						scrapeConfig,
+						serviceMonitor,
+						podMonitor,
+						secretAdditionalScrapeConfigs,
+						additionalConfigMap,
+					))
+				})
+
+				It("should enable autoscaling on preexisting PVCs", func() {
+					actualPvc := &corev1.PersistentVolumeClaim{}
+					Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, preexistingPvcName}, actualPvc)).
+						To(Succeed())
+					Expect(actualPvc.Annotations).NotTo(BeNil())
+					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).
+						To(Equal("true"))
+					Expect(actualPvc.Annotations).NotTo(HaveKey("pvc.autoscaling.gardener.cloud/min-threshold"))
+					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]).
+						To(Equal(storageAutoscalingMaxAllowed.String()))
+				})
+			})
+
+			When("storage autoscaling is disabled", func() {
+				var (
+					preexistingPvcName = "preexisting-pvc"
+				)
+
+				BeforeEach(func() {
+					Expect(fakeClient.Create(ctx, &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      preexistingPvcName,
+							Namespace: namespace,
+							Labels: map[string]string{
+								"app.kubernetes.io/instance":   name,
+								"app.kubernetes.io/managed-by": "prometheus-operator",
+								"app.kubernetes.io/name":       "prometheus",
+								"prometheus":                   name,
+							},
+							Annotations: map[string]string{"pvc.autoscaling.gardener.cloud/is-enabled": "true"},
+						},
+					})).To(Succeed())
+					values.StorageAutoscalingEnabled = false
+					values.StorageAutoscalingMinThreshold = ptr.To(storageAutoscalingMinThreshold)
+					values.StorageAutoscalingMaxAllowed = ptr.To(storageAutoscalingMaxAllowed)
+				})
+
+				It("should leave existing PVCs' autoscaling configuration unchanged", func() {
+					actualPvc := &corev1.PersistentVolumeClaim{}
+					Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, preexistingPvcName}, actualPvc)).
+						To(Succeed())
+					Expect(actualPvc.Annotations).NotTo(BeNil())
+					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).
+						To(Equal("true"))
+				})
+			})
+
+			When("a preexisting PVC already has autoscaling configuration", func() {
+				var (
+					preexistingPvcName = "preexisting-pvc"
+				)
+
+				BeforeEach(func() {
+					Expect(fakeClient.Create(ctx, &corev1.PersistentVolumeClaim{
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      preexistingPvcName,
+							Namespace: namespace,
+							Labels: map[string]string{
+								"app.kubernetes.io/instance":   name,
+								"app.kubernetes.io/managed-by": "prometheus-operator",
+								"app.kubernetes.io/name":       "prometheus",
+								"prometheus":                   name,
+							},
+							Annotations: map[string]string{"" +
+								"pvc.autoscaling.gardener.cloud/is-enabled": "false",
+								"pvc.autoscaling.gardener.cloud/max-capacity": "100Gi",
+							},
+						},
+					})).To(Succeed())
+					values.StorageAutoscalingEnabled = true
+					values.StorageAutoscalingMinThreshold = ptr.To(storageAutoscalingMinThreshold)
+					values.StorageAutoscalingMaxAllowed = ptr.To(storageAutoscalingMaxAllowed)
+				})
+
+				It("should leave the existing PVC's autoscaling configuration unchanged", func() {
+					actualPvc := &corev1.PersistentVolumeClaim{}
+					Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, preexistingPvcName}, actualPvc)).
+						To(Succeed())
+					Expect(actualPvc.Annotations).NotTo(BeNil())
+					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).
+						To(Equal("false"))
+					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]).
+						To(Equal("100Gi"))
 				})
 			})
 		})

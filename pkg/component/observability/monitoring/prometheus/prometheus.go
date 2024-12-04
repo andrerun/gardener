@@ -90,11 +90,16 @@ func (p *prometheus) prometheus(cortexConfigMap *corev1.ConfigMap) *monitoringv1
 	if p.values.StorageAutoscalingEnabled {
 		pvcMetadata := &obj.Spec.CommonPrometheusFields.Storage.VolumeClaimTemplate.EmbeddedObjectMetadata
 		pvcMetadata.Annotations = map[string]string{
-			"pvc.autoscaling.gardener.cloud/is-enabled": "true",
+			"pvc.autoscaling.gardener.cloud/is-enabled":    "true",
+			"pvc.autoscaling.gardener.cloud/min-threshold": "1Gi",
 		}
 		if p.values.StorageAutoscalingMaxAllowed != nil {
 			pvcMetadata.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] =
 				p.values.StorageAutoscalingMaxAllowed.String()
+		}
+		if p.values.StorageAutoscalingMinThreshold != nil {
+			pvcMetadata.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] =
+				p.values.StorageAutoscalingMinThreshold.String()
 		}
 	}
 

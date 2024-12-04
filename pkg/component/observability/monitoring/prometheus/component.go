@@ -70,6 +70,12 @@ type Values struct {
 	StorageAutoscalingEnabled bool
 	// StorageAutoscalingMaxAllowed - The maximum size to which autoscaling will expand the storage volume. Nil means no limit.
 	StorageAutoscalingMaxAllowed *resource.Quantity
+	// StorageAutoscalingMinThreshold - The scaling trigger threshold is generally proportional to volume size.
+	// For very small volumes, the threshold thus suggested can become too small. StorageAutoscalingMinThreshold sets a
+	// lower bound for the proportionality of the threshold: for the smallest of volumes, where proportionality
+	// suggests a value smaller than the configured minimum, the configured minimum will be used instead.
+	// Nil means no minimum.
+	StorageAutoscalingMinThreshold *resource.Quantity
 	// Replicas is the number of replicas.
 	Replicas int32
 	// Retention is the duration for the data retention.
@@ -248,16 +254,18 @@ func (p *prometheus) Deploy(ctx context.Context) error {
 		return err
 	}
 
-	err = monitoringutils.EnableAutoscalingOnExistingPVCs(
-		ctx, p.client, p.namespace, p.values.StorageAutoscalingMaxAllowed.String(),
-		map[string]string{
-			"app.kubernetes.io/instance":   p.values.Name,
-			"app.kubernetes.io/managed-by": "prometheus-operator",
-			"app.kubernetes.io/name":       "prometheus",
-			"prometheus":                   p.values.Name,
-		})
-	if err != nil {
-		return err
+	if p.values.StorageAutoscalingEnabled {
+		err = monitoringutils.EnableAutoscalingOnExistingPVCs(
+			ctx, p.client, p.namespace, p.values.StorageAutoscalingEnabled, p.values.StorageAutoscalingMaxAllowed.String(),
+			map[string]string{
+				"app.kubernetes.io/instance":   p.values.Name,
+				"app.kubernetes.io/managed-by": "prometheus-operator",
+				"app.kubernetes.io/name":       "prometheus",
+				"prometheus":                   p.values.Name,
+			})
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := managedresources.CreateForSeedWithLabels(ctx, p.client, p.namespace, p.name(), false, map[string]string{v1beta1constants.LabelCareConditionType: v1beta1constants.ObservabilityComponentsHealthy}, resources); err != nil {

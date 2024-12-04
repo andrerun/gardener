@@ -264,15 +264,17 @@ func (v *vali) Deploy(ctx context.Context) error {
 		return err
 	}
 
-	err = monitoringutils.EnableAutoscalingOnExistingPVCs(
-		ctx, v.client, v.namespace, sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/max-capacity"],
-		map[string]string{
-			v1beta1constants.GardenRole: v1beta1constants.GardenRoleLogging,
-			v1beta1constants.LabelRole:  "logging",
-			v1beta1constants.LabelApp:   valiName,
-		})
-	if err != nil {
-		return err
+	if isStorageAutoscalingEnabled {
+		err = monitoringutils.EnableAutoscalingOnExistingPVCs(
+			ctx, v.client, v.namespace, isStorageAutoscalingEnabled, sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/max-capacity"],
+			map[string]string{
+				v1beta1constants.GardenRole: v1beta1constants.GardenRoleLogging,
+				v1beta1constants.LabelRole:  "logging",
+				v1beta1constants.LabelApp:   valiName,
+			})
+		if err != nil {
+			return err
+		}
 	}
 
 	return managedresources.CreateForSeedWithLabels(ctx, v.client, v.namespace, valiconstants.ManagedResourceNameRuntime, false, map[string]string{v1beta1constants.LabelCareConditionType: v1beta1constants.ObservabilityComponentsHealthy}, serializedObjects)
@@ -705,11 +707,19 @@ func (v *vali) getStatefulSet(
 			maxAllowed := v.values.Storage.DeepCopy()
 			maxAllowed.Mul(2)
 
+			// Min threshold is 20% of initial autoscaling request, rounded to the megabyte
+			autoscalingRequestBytesPercent20 := (autoscalingRequest.ScaledValue(0) + 3) / 5
+			autoscalingRequestBytesPercent20MegabyteRounded :=
+				(autoscalingRequestBytesPercent20 + 512*1024) / 1024 / 1024 * 1024 * 1024
+			minThreshold := resource.NewQuantity(autoscalingRequestBytesPercent20MegabyteRounded, resource.BinarySI)
+
 			pvcTemplate.Spec.Resources.Requests[corev1.ResourceStorage] = autoscalingRequest
 			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = maxAllowed.String()
+			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = minThreshold.String()
 		} else {
 			pvcTemplate.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("1Gi")
 			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = "60Gi"
+			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = "200Mi"
 		}
 	} else {
 		if v.values.Storage != nil {

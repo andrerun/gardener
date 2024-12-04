@@ -562,14 +562,15 @@ func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isM
 	}
 
 	return sharedcomponent.NewPrometheus(log, r.SeedClientSet.Client(), r.GardenNamespace, prometheus.Values{
-		Name:                         "cache",
-		PriorityClassName:            v1beta1constants.PriorityClassNameSeedSystem600,
-		StorageCapacity:              resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
-		StorageAutoscalingEnabled:    isStorageResizable,
-		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse(seed.GetValidVolumeSize("20Gi"))), // This conservative limit can be relaxed, once `pvc-autoscaler` proves itself in the field,
-		Replicas:                     1,
-		Retention:                    ptr.To(monitoringv1.Duration("1d")),
-		RetentionSize:                "5GB",
+		Name:                           "cache",
+		PriorityClassName:              v1beta1constants.PriorityClassNameSeedSystem600,
+		StorageCapacity:                resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
+		StorageAutoscalingEnabled:      isStorageResizable,
+		StorageAutoscalingMaxAllowed:   ptr.To(resource.MustParse(seed.GetValidVolumeSize("20Gi"))), // This conservative limit can be relaxed, once `pvc-autoscaler` proves itself in the field,
+		StorageAutoscalingMinThreshold: ptr.To(resource.MustParse("1Gi")),
+		Replicas:                       1,
+		Retention:                      ptr.To(monitoringv1.Duration("1d")),
+		RetentionSize:                  "5GB",
 		AdditionalPodLabels: map[string]string{
 			"networking.resources.gardener.cloud/to-" + v1beta1constants.LabelNetworkPolicySeedScrapeTargets: v1beta1constants.LabelNetworkPolicyAllowed,
 		},
@@ -594,14 +595,15 @@ func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed, isSt
 	}
 
 	return sharedcomponent.NewPrometheus(log, r.SeedClientSet.Client(), r.GardenNamespace, prometheus.Values{
-		Name:                         "seed",
-		PriorityClassName:            v1beta1constants.PriorityClassNameSeedSystem600,
-		StorageCapacity:              resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
-		StorageAutoscalingEnabled:    isStorageResizable,
-		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse(seed.GetValidVolumeSize("200Gi"))),
-		Replicas:                     1,
-		RetentionSize:                "85GB",
-		VPAMinAllowed:                &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("400Mi")},
+		Name:                           "seed",
+		PriorityClassName:              v1beta1constants.PriorityClassNameSeedSystem600,
+		StorageCapacity:                resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
+		StorageAutoscalingEnabled:      isStorageResizable,
+		StorageAutoscalingMaxAllowed:   ptr.To(resource.MustParse(seed.GetValidVolumeSize("200Gi"))),
+		StorageAutoscalingMinThreshold: ptr.To(resource.MustParse("600Mi")),
+		Replicas:                       1,
+		RetentionSize:                  "85GB",
+		VPAMinAllowed:                  &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("400Mi")},
 		AdditionalPodLabels: map[string]string{
 			"networking.resources.gardener.cloud/to-" + v1beta1constants.LabelNetworkPolicySeedScrapeTargets:            v1beta1constants.LabelNetworkPolicyAllowed,
 			"networking.resources.gardener.cloud/to-extensions-" + v1beta1constants.LabelNetworkPolicySeedScrapeTargets: v1beta1constants.LabelNetworkPolicyAllowed,
@@ -627,16 +629,17 @@ func (r *Reconciler) newAggregatePrometheus(log logr.Logger, seed *seedpkg.Seed,
 	}
 
 	values := prometheus.Values{
-		Name:                         "aggregate",
-		PriorityClassName:            v1beta1constants.PriorityClassNameSeedSystem600,
-		StorageCapacity:              resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
-		StorageAutoscalingEnabled:    isStorageResizable,
-		StorageAutoscalingMaxAllowed: ptr.To(resource.MustParse(seed.GetValidVolumeSize("40Gi"))),
-		Replicas:                     1,
-		Retention:                    ptr.To(monitoringv1.Duration("30d")),
-		RetentionSize:                "15GB",
-		ExternalLabels:               map[string]string{"seed": seed.GetInfo().Name},
-		VPAMinAllowed:                &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1000M")},
+		Name:                           "aggregate",
+		PriorityClassName:              v1beta1constants.PriorityClassNameSeedSystem600,
+		StorageCapacity:                resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
+		StorageAutoscalingEnabled:      isStorageResizable,
+		StorageAutoscalingMaxAllowed:   ptr.To(resource.MustParse(seed.GetValidVolumeSize("40Gi"))),
+		StorageAutoscalingMinThreshold: ptr.To(resource.MustParse("600Mi")),
+		Replicas:                       1,
+		Retention:                      ptr.To(monitoringv1.Duration("30d")),
+		RetentionSize:                  "15GB",
+		ExternalLabels:                 map[string]string{"seed": seed.GetInfo().Name},
+		VPAMinAllowed:                  &corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1000M")},
 		CentralConfigs: prometheus.CentralConfigs{
 			PrometheusRules: aggregateprometheus.CentralPrometheusRules(),
 			ScrapeConfigs:   aggregateprometheus.CentralScrapeConfigs(),
@@ -798,10 +801,9 @@ func (r *Reconciler) newPvcAutoscaler(secretsManager secretsmanager.Interface) (
 
 	pvaDeployer := pvcautoscaler.New(r.GardenNamespace, values, r.SeedClientSet.Client(), secretsManager)
 
-	// TODO: Andrey: P2: Introduce a feature gate
-	// if !features.DefaultFeatureGate.Enabled(features.CustomMetricsHPAForAPIServer) {
-	//	pvaDeployer = component.OpDestroyWithoutWait(pvaDeployer)
-	// }
+	if !features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes) {
+		pvaDeployer = component.OpDestroyWithoutWait(pvaDeployer)
+	}
 
 	return pvaDeployer, nil
 }

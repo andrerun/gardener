@@ -7,7 +7,8 @@ package vali_test
 import (
 	"context"
 	"fmt"
-
+	"github.com/gardener/gardener/pkg/features"
+	testutil "github.com/gardener/gardener/pkg/utils/test"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	gomegatypes "github.com/onsi/gomega/types"
@@ -18,6 +19,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/intstr"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	vpaautoscalingv1 "k8s.io/autoscaler/vertical-pod-autoscaler/pkg/apis/autoscaling.k8s.io/v1"
+	"k8s.io/component-base/featuregate"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	fakeclient "sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -79,6 +82,21 @@ var _ = Describe("Vali", func() {
 
 			fakeSecretManager secretsmanager.Interface
 			storage           = resource.MustParse("60Gi")
+
+			setupDefaultStorageClass = func() {
+				storageClass := &storagev1.StorageClass{
+					ObjectMeta: metav1.ObjectMeta{
+						Annotations: map[string]string{
+							"storageclass.kubernetes.io/is-default-class": "true",
+						},
+						Name:      "my-storage-class",
+						Namespace: "",
+					},
+					Provisioner:          "my-storage-provisioner",
+					AllowVolumeExpansion: ptr.To(true),
+				}
+				Expect(c.Create(ctx, storageClass)).To(Succeed())
+			}
 		)
 
 		BeforeEach(func() {
@@ -91,6 +109,8 @@ var _ = Describe("Vali", func() {
 
 			By("Create secrets managed outside of this package for which secretsmanager.Get() will be called")
 			Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "generic-token-kubeconfig", Namespace: namespace}})).To(Succeed())
+
+			features.DefaultFeatureGate.Add(features.GetFeatures(features.PVCAutoscalingForObservabilityVolumes))
 		})
 
 		JustBeforeEach(func() {
@@ -121,168 +141,218 @@ var _ = Describe("Vali", func() {
 			}
 		})
 
-		It("should successfully deploy all resources for shoot", func() {
-			valiDeployer := New(
-				c,
-				namespace,
-				fakeSecretManager,
-				Values{
-					Replicas:                1,
-					Storage:                 &storage,
-					ShootNodeLoggingEnabled: true,
-					ValiImage:               valiImage,
-					CuratorImage:            curatorImage,
-					InitLargeDirImage:       initLargeDirImage,
-					TelegrafImage:           telegrafImage,
-					KubeRBACProxyImage:      kubeRBACProxyImage,
-					PriorityClassName:       priorityClassName,
-					ClusterType:             "shoot",
-					IngressHost:             valiHost,
+		DescribeTable("should successfully deploy all resources for shoot",
+			func(prepTest func(), featureGates map[featuregate.Feature]bool, isStorageAutoscalingEnabled bool) {
+				if prepTest != nil {
+					prepTest()
+				}
+
+				for featureGate, value := range featureGates {
+					defer testutil.WithFeatureGate(features.DefaultFeatureGate, featureGate, value)()
+				}
+
+				valiDeployer := New(
+					c,
+					namespace,
+					fakeSecretManager,
+					Values{
+						Replicas:                1,
+						Storage:                 &storage,
+						ShootNodeLoggingEnabled: true,
+						ValiImage:               valiImage,
+						CuratorImage:            curatorImage,
+						InitLargeDirImage:       initLargeDirImage,
+						TelegrafImage:           telegrafImage,
+						KubeRBACProxyImage:      kubeRBACProxyImage,
+						PriorityClassName:       priorityClassName,
+						ClusterType:             "shoot",
+						IngressHost:             valiHost,
+					},
+				)
+
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(BeNotFoundError())
+
+				Expect(valiDeployer.Deploy(ctx)).To(Succeed())
+
+				Expect(c.Get(ctx, client.ObjectKey{Name: valitailShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(Succeed())
+				Expect(c.Get(ctx, client.ObjectKey{Name: kubeRBacProxyShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(Succeed())
+
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(Succeed())
+				expectedMr := &resourcesv1alpha1.ManagedResource{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            managedResourceName,
+						Namespace:       namespace,
+						Labels:          map[string]string{"care.gardener.cloud/condition-type": "ObservabilityComponentsHealthy"},
+						ResourceVersion: "1",
+					},
+					Spec: resourcesv1alpha1.ManagedResourceSpec{
+						Class: ptr.To("seed"),
+						SecretRefs: []corev1.LocalObjectReference{{
+							Name: managedResource.Spec.SecretRefs[0].Name,
+						}},
+						KeepObjects: ptr.To(false),
+					},
+				}
+				utilruntime.Must(references.InjectAnnotations(expectedMr))
+				Expect(managedResource).To(DeepEqual(expectedMr))
+				Expect(managedResource).To(consistOf(
+					getTelegrafConfigMap(),
+					getValiConfigMap(),
+					getVPA(true),
+					getIngress(),
+					getService(true, "shoot"),
+					getStatefulSet(true, isStorageAutoscalingEnabled),
+					getServiceMonitor("shoot", true),
+					getPrometheusRule("shoot"),
+				))
+
+				managedResourceSecret.Name = managedResource.Spec.SecretRefs[0].Name
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(Succeed())
+				Expect(managedResourceSecret.Type).To(Equal(corev1.SecretTypeOpaque))
+				Expect(managedResourceSecret.Immutable).To(Equal(ptr.To(true)))
+				Expect(managedResourceSecret.Labels["resources.gardener.cloud/garbage-collectable-reference"]).To(Equal("true"))
+
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceTarget), managedResourceTarget)).To(Succeed())
+				expectedTargetMr := &resourcesv1alpha1.ManagedResource{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            managedResourceNameTarget,
+						Namespace:       namespace,
+						ResourceVersion: "1",
+						Labels:          map[string]string{"origin": "gardener"},
+					},
+					Spec: resourcesv1alpha1.ManagedResourceSpec{
+						InjectLabels: map[string]string{"shoot.gardener.cloud/no-cleanup": "true"},
+						SecretRefs: []corev1.LocalObjectReference{{
+							Name: managedResourceTarget.Spec.SecretRefs[0].Name,
+						}},
+						KeepObjects: ptr.To(false),
+					},
+				}
+				utilruntime.Must(references.InjectAnnotations(expectedTargetMr))
+				Expect(managedResourceTarget).To(DeepEqual(expectedTargetMr))
+				Expect(managedResourceTarget).To(consistOf(
+					getKubeRBACProxyClusterRoleBinding(),
+					getValitailClusterRole(),
+					getValitailClusterRoleBinding(),
+				))
+
+				managedResourceSecretTarget.Name = managedResourceTarget.Spec.SecretRefs[0].Name
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecretTarget), managedResourceSecretTarget)).To(Succeed())
+				Expect(managedResourceSecretTarget.Type).To(Equal(corev1.SecretTypeOpaque))
+				Expect(managedResourceSecretTarget.Immutable).To(Equal(ptr.To(true)))
+				Expect(managedResourceSecretTarget.Labels["resources.gardener.cloud/garbage-collectable-reference"]).To(Equal("true"))
+
+				test.PrometheusRule(getPrometheusRule("shoot"), "testdata/shoot-vali.prometheusrule.test.yaml")
+			},
+
+			Entry("default behaviour, PVC autoscaling is disabled",
+				nil,
+				map[featuregate.Feature]bool{
+					features.PVCAutoscalingForObservabilityVolumes: false,
 				},
-			)
-
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(BeNotFoundError())
-
-			Expect(valiDeployer.Deploy(ctx)).To(Succeed())
-
-			Expect(c.Get(ctx, client.ObjectKey{Name: valitailShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(Succeed())
-			Expect(c.Get(ctx, client.ObjectKey{Name: kubeRBacProxyShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(Succeed())
-
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(Succeed())
-			expectedMr := &resourcesv1alpha1.ManagedResource{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:            managedResourceName,
-					Namespace:       namespace,
-					Labels:          map[string]string{"care.gardener.cloud/condition-type": "ObservabilityComponentsHealthy"},
-					ResourceVersion: "1",
+				false,
+			),
+			Entry("PVC autoscaling is enabled",
+				setupDefaultStorageClass,
+				map[featuregate.Feature]bool{
+					features.PVCAutoscalingForObservabilityVolumes: true,
 				},
-				Spec: resourcesv1alpha1.ManagedResourceSpec{
-					Class: ptr.To("seed"),
-					SecretRefs: []corev1.LocalObjectReference{{
-						Name: managedResource.Spec.SecretRefs[0].Name,
-					}},
-					KeepObjects: ptr.To(false),
+				true,
+			),
+		)
+
+		DescribeTable("should successfully deploy all resources for seed",
+			func(prepTest func(), featureGates map[featuregate.Feature]bool, isStorageAutoscalingEnabled bool) {
+				if prepTest != nil {
+					prepTest()
+				}
+
+				for featureGate, value := range featureGates {
+					defer testutil.WithFeatureGate(features.DefaultFeatureGate, featureGate, value)()
+				}
+
+				valiDeployer := New(
+					c,
+					namespace,
+					fakeSecretManager,
+					Values{
+						Replicas:          1,
+						Storage:           &storage,
+						ValiImage:         valiImage,
+						CuratorImage:      curatorImage,
+						InitLargeDirImage: initLargeDirImage,
+						PriorityClassName: priorityClassName,
+						ClusterType:       "seed",
+					},
+				)
+
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(BeNotFoundError())
+
+				Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: valitailShootAccessSecretName, Namespace: namespace}})).To(Succeed())
+				Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: kubeRBacProxyShootAccessSecretName, Namespace: namespace}})).To(Succeed())
+				Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: managedResourceSecretNameTarget, Namespace: namespace}})).To(Succeed())
+				Expect(c.Create(ctx, &resourcesv1alpha1.ManagedResource{ObjectMeta: metav1.ObjectMeta{Name: managedResourceNameTarget, Namespace: namespace}})).To(Succeed())
+
+				Expect(valiDeployer.Deploy(ctx)).To(Succeed())
+
+				Expect(c.Get(ctx, client.ObjectKey{Name: valitailShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(BeNotFoundError())
+				Expect(c.Get(ctx, client.ObjectKey{Name: kubeRBacProxyShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(BeNotFoundError())
+				Expect(c.Get(ctx, client.ObjectKey{Name: managedResourceSecretNameTarget, Namespace: namespace}, &corev1.Secret{})).To(BeNotFoundError())
+				Expect(c.Get(ctx, client.ObjectKey{Name: managedResourceNameTarget, Namespace: namespace}, &resourcesv1alpha1.ManagedResource{})).To(BeNotFoundError())
+
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(Succeed())
+				expectedMr := &resourcesv1alpha1.ManagedResource{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:            managedResourceName,
+						Namespace:       namespace,
+						Labels:          map[string]string{"care.gardener.cloud/condition-type": "ObservabilityComponentsHealthy"},
+						ResourceVersion: "1",
+					},
+					Spec: resourcesv1alpha1.ManagedResourceSpec{
+						Class: ptr.To("seed"),
+						SecretRefs: []corev1.LocalObjectReference{{
+							Name: managedResource.Spec.SecretRefs[0].Name,
+						}},
+						KeepObjects: ptr.To(false),
+					},
+				}
+				utilruntime.Must(references.InjectAnnotations(expectedMr))
+				Expect(managedResource).To(DeepEqual(expectedMr))
+				Expect(managedResource).To(consistOf(
+					getValiConfigMap(),
+					getService(false, "seed"),
+					getVPA(false),
+					getStatefulSet(false, isStorageAutoscalingEnabled),
+					getServiceMonitor("aggregate", false),
+					getPrometheusRule("aggregate"),
+				))
+
+				managedResourceSecret.Name = managedResource.Spec.SecretRefs[0].Name
+				Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(Succeed())
+				Expect(managedResourceSecret.Type).To(Equal(corev1.SecretTypeOpaque))
+				Expect(managedResourceSecret.Immutable).To(Equal(ptr.To(true)))
+				Expect(managedResourceSecret.Labels["resources.gardener.cloud/garbage-collectable-reference"]).To(Equal("true"))
+
+				test.PrometheusRule(getPrometheusRule("aggregate"), "testdata/aggregate-vali.prometheusrule.test.yaml")
+			},
+
+			Entry("default behaviour, PVC autoscaling is disabled",
+				nil,
+				map[featuregate.Feature]bool{
+					features.PVCAutoscalingForObservabilityVolumes: false,
 				},
-			}
-			utilruntime.Must(references.InjectAnnotations(expectedMr))
-			Expect(managedResource).To(DeepEqual(expectedMr))
-			Expect(managedResource).To(consistOf(
-				getTelegrafConfigMap(),
-				getValiConfigMap(),
-				getVPA(true),
-				getIngress(),
-				getService(true, "shoot"),
-				getStatefulSet(true),
-				getServiceMonitor("shoot", true),
-				getPrometheusRule("shoot"),
-			))
-
-			managedResourceSecret.Name = managedResource.Spec.SecretRefs[0].Name
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(Succeed())
-			Expect(managedResourceSecret.Type).To(Equal(corev1.SecretTypeOpaque))
-			Expect(managedResourceSecret.Immutable).To(Equal(ptr.To(true)))
-			Expect(managedResourceSecret.Labels["resources.gardener.cloud/garbage-collectable-reference"]).To(Equal("true"))
-
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceTarget), managedResourceTarget)).To(Succeed())
-			expectedTargetMr := &resourcesv1alpha1.ManagedResource{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:            managedResourceNameTarget,
-					Namespace:       namespace,
-					ResourceVersion: "1",
-					Labels:          map[string]string{"origin": "gardener"},
+				false,
+			),
+			Entry("PVC autoscaling is enabled",
+				setupDefaultStorageClass,
+				map[featuregate.Feature]bool{
+					features.PVCAutoscalingForObservabilityVolumes: true,
 				},
-				Spec: resourcesv1alpha1.ManagedResourceSpec{
-					InjectLabels: map[string]string{"shoot.gardener.cloud/no-cleanup": "true"},
-					SecretRefs: []corev1.LocalObjectReference{{
-						Name: managedResourceTarget.Spec.SecretRefs[0].Name,
-					}},
-					KeepObjects: ptr.To(false),
-				},
-			}
-			utilruntime.Must(references.InjectAnnotations(expectedTargetMr))
-			Expect(managedResourceTarget).To(DeepEqual(expectedTargetMr))
-			Expect(managedResourceTarget).To(consistOf(
-				getKubeRBACProxyClusterRoleBinding(),
-				getValitailClusterRole(),
-				getValitailClusterRoleBinding(),
-			))
-
-			managedResourceSecretTarget.Name = managedResourceTarget.Spec.SecretRefs[0].Name
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecretTarget), managedResourceSecretTarget)).To(Succeed())
-			Expect(managedResourceSecretTarget.Type).To(Equal(corev1.SecretTypeOpaque))
-			Expect(managedResourceSecretTarget.Immutable).To(Equal(ptr.To(true)))
-			Expect(managedResourceSecretTarget.Labels["resources.gardener.cloud/garbage-collectable-reference"]).To(Equal("true"))
-
-			test.PrometheusRule(getPrometheusRule("shoot"), "testdata/shoot-vali.prometheusrule.test.yaml")
-		})
-
-		It("should successfully deploy all resources for seed", func() {
-			valiDeployer := New(
-				c,
-				namespace,
-				fakeSecretManager,
-				Values{
-					Replicas:          1,
-					Storage:           &storage,
-					ValiImage:         valiImage,
-					CuratorImage:      curatorImage,
-					InitLargeDirImage: initLargeDirImage,
-					PriorityClassName: priorityClassName,
-					ClusterType:       "seed",
-				},
-			)
-
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(BeNotFoundError())
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(BeNotFoundError())
-
-			Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: valitailShootAccessSecretName, Namespace: namespace}})).To(Succeed())
-			Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: kubeRBacProxyShootAccessSecretName, Namespace: namespace}})).To(Succeed())
-			Expect(c.Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: managedResourceSecretNameTarget, Namespace: namespace}})).To(Succeed())
-			Expect(c.Create(ctx, &resourcesv1alpha1.ManagedResource{ObjectMeta: metav1.ObjectMeta{Name: managedResourceNameTarget, Namespace: namespace}})).To(Succeed())
-
-			Expect(valiDeployer.Deploy(ctx)).To(Succeed())
-
-			Expect(c.Get(ctx, client.ObjectKey{Name: valitailShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(BeNotFoundError())
-			Expect(c.Get(ctx, client.ObjectKey{Name: kubeRBacProxyShootAccessSecretName, Namespace: namespace}, &corev1.Secret{})).To(BeNotFoundError())
-			Expect(c.Get(ctx, client.ObjectKey{Name: managedResourceSecretNameTarget, Namespace: namespace}, &corev1.Secret{})).To(BeNotFoundError())
-			Expect(c.Get(ctx, client.ObjectKey{Name: managedResourceNameTarget, Namespace: namespace}, &resourcesv1alpha1.ManagedResource{})).To(BeNotFoundError())
-
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResource), managedResource)).To(Succeed())
-			expectedMr := &resourcesv1alpha1.ManagedResource{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:            managedResourceName,
-					Namespace:       namespace,
-					Labels:          map[string]string{"care.gardener.cloud/condition-type": "ObservabilityComponentsHealthy"},
-					ResourceVersion: "1",
-				},
-				Spec: resourcesv1alpha1.ManagedResourceSpec{
-					Class: ptr.To("seed"),
-					SecretRefs: []corev1.LocalObjectReference{{
-						Name: managedResource.Spec.SecretRefs[0].Name,
-					}},
-					KeepObjects: ptr.To(false),
-				},
-			}
-			utilruntime.Must(references.InjectAnnotations(expectedMr))
-			Expect(managedResource).To(DeepEqual(expectedMr))
-			Expect(managedResource).To(consistOf(
-				getValiConfigMap(),
-				getService(false, "seed"),
-				getVPA(false),
-				getStatefulSet(false),
-				getServiceMonitor("aggregate", false),
-				getPrometheusRule("aggregate"),
-			))
-
-			managedResourceSecret.Name = managedResource.Spec.SecretRefs[0].Name
-			Expect(c.Get(ctx, client.ObjectKeyFromObject(managedResourceSecret), managedResourceSecret)).To(Succeed())
-			Expect(managedResourceSecret.Type).To(Equal(corev1.SecretTypeOpaque))
-			Expect(managedResourceSecret.Immutable).To(Equal(ptr.To(true)))
-			Expect(managedResourceSecret.Labels["resources.gardener.cloud/garbage-collectable-reference"]).To(Equal("true"))
-
-			test.PrometheusRule(getPrometheusRule("aggregate"), "testdata/aggregate-vali.prometheusrule.test.yaml")
-		})
+				true,
+			),
+		)
 	})
 
 	Describe("#ResizeOrDeleteValiDataVolumeIfStorageNotTheSame", func() {
@@ -1099,7 +1169,7 @@ func getIngress() *networkingv1.Ingress {
 	}
 }
 
-func getStatefulSet(isRBACProxyEnabled bool) *appsv1.StatefulSet {
+func getStatefulSet(isRBACProxyEnabled bool, isStorageAutoscalingEnabled bool) *appsv1.StatefulSet {
 	fsGroupChangeOnRootMismatch := corev1.FSGroupChangeOnRootMismatch
 	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -1424,6 +1494,16 @@ wait
 				},
 			},
 		}...)
+	}
+
+	if isStorageAutoscalingEnabled {
+		if sts.Spec.VolumeClaimTemplates[0].Annotations == nil {
+			sts.Spec.VolumeClaimTemplates[0].Annotations = make(map[string]string)
+		}
+		sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/is-enabled"] = "true"
+		sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = "120Gi"
+		sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = "614Mi"
+		sts.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("3Gi")
 	}
 
 	utilruntime.Must(references.InjectAnnotations(sts))
