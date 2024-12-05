@@ -197,13 +197,16 @@ func (r *Reconciler) instantiateComponents(
 	}
 
 	// observability components
-	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating observability volumes.
+	// This isn't quite right. We do use the default storage class when creating observability volumes.
 	// However, in the case of reconciling an existing instance, the default class might have changed since
-	// the PVC was created. For a preexisting volume, check its actual class, don't assume it's still the default.
-	var isObservabilityStorageResizable bool
-	isObservabilityStorageResizable, err = kubernetesutils.IsDefaultStorageClassResizable(ctx, r.SeedClientSet.Client())
-	if err != nil {
-		return
+	// the PVC was created. For a preexisting volume, it would be better to check its actual class, not
+	// assume it's still the default.
+	isObservabilityStorageAutoscalingEnabled := features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes)
+	if isObservabilityStorageAutoscalingEnabled {
+		isObservabilityStorageAutoscalingEnabled, err = kubernetesutils.IsDefaultStorageClassResizable(ctx, r.SeedClientSet.Client())
+		if err != nil {
+			return
+		}
 	}
 	c.fluentOperator, err = r.newFluentOperator()
 	if err != nil {
@@ -233,7 +236,7 @@ func (r *Reconciler) instantiateComponents(
 	if err != nil {
 		return
 	}
-	c.cachePrometheus, err = r.newCachePrometheus(log, seed, isManagedSeed, isObservabilityStorageResizable)
+	c.cachePrometheus, err = r.newCachePrometheus(log, seed, isManagedSeed, isObservabilityStorageAutoscalingEnabled)
 	if err != nil {
 		return
 	}
@@ -241,12 +244,12 @@ func (r *Reconciler) instantiateComponents(
 	if err != nil {
 		return
 	}
-	c.seedPrometheus, err = r.newSeedPrometheus(log, seed, isObservabilityStorageResizable)
+	c.seedPrometheus, err = r.newSeedPrometheus(log, seed, isObservabilityStorageAutoscalingEnabled)
 	if err != nil {
 		return
 	}
 	c.aggregatePrometheus, err = r.newAggregatePrometheus(
-		log, seed, secretsManager, globalMonitoringSecretSeed, wildCardCertSecret, alertingSMTPSecret, isObservabilityStorageResizable)
+		log, seed, secretsManager, globalMonitoringSecretSeed, wildCardCertSecret, alertingSMTPSecret, isObservabilityStorageAutoscalingEnabled)
 	if err != nil {
 		return
 	}
@@ -548,14 +551,14 @@ func (r *Reconciler) newPlutono(seed *seedpkg.Seed, secretsManager secretsmanage
 	)
 }
 
-func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isManagedSeed bool, isStorageResizable bool) (component.DeployWaiter, error) {
+func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isManagedSeed bool, isStorageAutoscalingEnabled bool) (component.DeployWaiter, error) {
 	additionalScrapeConfigs, err := cacheprometheus.AdditionalScrapeConfigs(isManagedSeed)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting additional scrape configs: %w", err)
 	}
 
 	var storageCapacityAsString string
-	if isStorageResizable {
+	if isStorageAutoscalingEnabled {
 		storageCapacityAsString = "2Gi"
 	} else {
 		storageCapacityAsString = "10Gi"
@@ -565,7 +568,7 @@ func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isM
 		Name:                           "cache",
 		PriorityClassName:              v1beta1constants.PriorityClassNameSeedSystem600,
 		StorageCapacity:                resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
-		StorageAutoscalingEnabled:      isStorageResizable,
+		StorageAutoscalingEnabled:      isStorageAutoscalingEnabled,
 		StorageAutoscalingMaxAllowed:   ptr.To(resource.MustParse(seed.GetValidVolumeSize("20Gi"))), // This conservative limit can be relaxed, once `pvc-autoscaler` proves itself in the field,
 		StorageAutoscalingMinThreshold: ptr.To(resource.MustParse("1Gi")),
 		Replicas:                       1,
@@ -586,9 +589,9 @@ func (r *Reconciler) newCachePrometheus(log logr.Logger, seed *seedpkg.Seed, isM
 	})
 }
 
-func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed, isStorageResizable bool) (component.DeployWaiter, error) {
+func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed, isStorageAutoscalingEnabled bool) (component.DeployWaiter, error) {
 	var storageCapacityAsString string
-	if isStorageResizable {
+	if isStorageAutoscalingEnabled {
 		storageCapacityAsString = "5Gi"
 	} else {
 		storageCapacityAsString = "100Gi"
@@ -598,7 +601,7 @@ func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed, isSt
 		Name:                           "seed",
 		PriorityClassName:              v1beta1constants.PriorityClassNameSeedSystem600,
 		StorageCapacity:                resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
-		StorageAutoscalingEnabled:      isStorageResizable,
+		StorageAutoscalingEnabled:      isStorageAutoscalingEnabled,
 		StorageAutoscalingMaxAllowed:   ptr.To(resource.MustParse(seed.GetValidVolumeSize("200Gi"))),
 		StorageAutoscalingMinThreshold: ptr.To(resource.MustParse("600Mi")),
 		Replicas:                       1,
@@ -620,9 +623,13 @@ func (r *Reconciler) newSeedPrometheus(log logr.Logger, seed *seedpkg.Seed, isSt
 	})
 }
 
-func (r *Reconciler) newAggregatePrometheus(log logr.Logger, seed *seedpkg.Seed, secretsManager secretsmanager.Interface, globalMonitoringSecret, wildcardCertSecret, alertingSMTPSecret *corev1.Secret, isStorageResizable bool) (component.DeployWaiter, error) {
+func (r *Reconciler) newAggregatePrometheus(
+	log logr.Logger, seed *seedpkg.Seed, secretsManager secretsmanager.Interface,
+	globalMonitoringSecret, wildcardCertSecret, alertingSMTPSecret *corev1.Secret,
+	isStorageAutoscalingEnabled bool) (component.DeployWaiter, error) {
+
 	var storageCapacityAsString string
-	if isStorageResizable {
+	if isStorageAutoscalingEnabled {
 		storageCapacityAsString = "2Gi"
 	} else {
 		storageCapacityAsString = "20Gi"
@@ -632,7 +639,7 @@ func (r *Reconciler) newAggregatePrometheus(log logr.Logger, seed *seedpkg.Seed,
 		Name:                           "aggregate",
 		PriorityClassName:              v1beta1constants.PriorityClassNameSeedSystem600,
 		StorageCapacity:                resource.MustParse(seed.GetValidVolumeSize(storageCapacityAsString)),
-		StorageAutoscalingEnabled:      isStorageResizable,
+		StorageAutoscalingEnabled:      isStorageAutoscalingEnabled,
 		StorageAutoscalingMaxAllowed:   ptr.To(resource.MustParse(seed.GetValidVolumeSize("40Gi"))),
 		StorageAutoscalingMinThreshold: ptr.To(resource.MustParse("600Mi")),
 		Replicas:                       1,
