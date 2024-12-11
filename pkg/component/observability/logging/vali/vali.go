@@ -150,12 +150,15 @@ func (v *vali) Deploy(ctx context.Context) error {
 		resources []client.Object
 	)
 
-	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating Vali volumes.
-	// However, the default class might have changed since then. For a preexisting volume, check its actual class,
-	// don't assume it's still the default.
 	isStorageAutoscalingEnabled := features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes)
 	if isStorageAutoscalingEnabled {
 		var err error
+		// This isn't quite right. We do use the default storage class when creating Vali volumes, but the default class
+		// can change. So the outcome of our check here may not reflect the state of (some) preexisting volumes, and of
+		// volumes created in the future. However, that would only be a problem when the cluster transitions from a state
+		// where the default class supports resize, to a state where the default class does not. Such transition is seen as
+		// extremely unlikely in a productive environment, and does not justify the complex implementation which would be
+		// required to handle it.
 		if isStorageAutoscalingEnabled, err = kubernetesutils.IsDefaultStorageClassResizable(ctx, v.client); err != nil {
 			return err
 		}

@@ -44,13 +44,13 @@ func getLabels() map[string]string {
 	}
 }
 
-func (pva *pvcAutoscaler) deployment(serverSecretName string) *appsv1.Deployment {
+func (pva *pvcAutoscaler) deployment(serverSecretName string, isServingAuthorizedMetrics bool) *appsv1.Deployment {
 	const (
 		tlsSecretMountPath  = "/var/run/secrets/gardener.cloud/tls"
 		tlsSecretVolumeName = "tls"
 	)
 
-	return &appsv1.Deployment{
+	deployment := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      deploymentName,
 			Namespace: pva.namespace,
@@ -126,7 +126,7 @@ func (pva *pvcAutoscaler) deployment(serverSecretName string) *appsv1.Deployment
 								},
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("10m"),
-									corev1.ResourceMemory: resource.MustParse("64Mi"), // TODO: Andrey: P2: Deploy on Canary and update based on actual usage
+									corev1.ResourceMemory: resource.MustParse("64Mi"), // TODO: Andrey: P2: Deploy to a real-life cluster and update based on actual usage
 								},
 							},
 							SecurityContext: &corev1.SecurityContext{
@@ -145,7 +145,7 @@ func (pva *pvcAutoscaler) deployment(serverSecretName string) *appsv1.Deployment
 								"--logtostderr=true",
 								"--v=2",
 							},
-							Image: "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0", // TODO: Andrey: P2: This should be parameterised, but we'll likely dispense with the whole kube-rbac-proxy container, so I'm keeping it hardcoded until deleted.
+							Image: pva.values.KubeRBACProxyImage,
 							Name:  "kube-rbac-proxy",
 							Ports: []corev1.ContainerPort{
 								{
@@ -161,7 +161,7 @@ func (pva *pvcAutoscaler) deployment(serverSecretName string) *appsv1.Deployment
 								},
 								Requests: corev1.ResourceList{
 									corev1.ResourceCPU:    resource.MustParse("5m"),
-									corev1.ResourceMemory: resource.MustParse("64Mi"), // TODO: Andrey: P2: Deploy on Canary and update based on actual usage
+									corev1.ResourceMemory: resource.MustParse("64Mi"), // TODO: Andrey: P2: Deploy to a real-life cluster and update based on actual usage
 								},
 							},
 							SecurityContext: &corev1.SecurityContext{
@@ -200,4 +200,11 @@ func (pva *pvcAutoscaler) deployment(serverSecretName string) *appsv1.Deployment
 			},
 		},
 	}
+
+	if !isServingAuthorizedMetrics {
+		deployment.Spec.Template.Spec.Containers = deployment.Spec.Template.Spec.Containers[:1]
+		deployment.Spec.Template.Spec.Volumes = nil
+	}
+
+	return deployment
 }

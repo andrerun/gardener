@@ -44,7 +44,7 @@ config:
     ShootManagedIssuer: true
     NewWorkerPoolHash: true
     NewVPN: true
-    PVCAutoscalingForObservabilityVolumes: true
+    PVCAutoscalingForObservabilityVolumes: false
   etcdConfig:
     featureGates:
       UseEtcdWrapper: true

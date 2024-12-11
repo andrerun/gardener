@@ -41,8 +41,9 @@ type pvcAutoscaler struct {
 }
 
 type Values struct {
-	Image             string
-	KubernetesVersion *semver.Version
+	Image              string
+	KubeRBACProxyImage string
+	KubernetesVersion  *semver.Version
 }
 
 func New(
@@ -85,7 +86,7 @@ func (pva *pvcAutoscaler) Deploy(ctx context.Context) error {
 		pva.controllerClusterRoleBinding(),
 		pva.proxyClusterRole(),
 		pva.proxyClusterRoleBinding(),
-		pva.deployment(serverCertificateSecret.Name),
+		pva.deployment(serverCertificateSecret.Name, false),
 		pva.pdb(),
 		pva.service(),
 		pva.serviceMonitor(),

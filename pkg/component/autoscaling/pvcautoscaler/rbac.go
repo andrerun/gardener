@@ -47,7 +47,6 @@ func (pva *pvcAutoscaler) leaderElectorRole() *rbacv1.Role {
 					"watch",
 					"update",
 					"delete",
-					// TODO: Andrey: P1: Do we need any of: list, patch?
 				},
 			},
 			{
@@ -56,10 +55,6 @@ func (pva *pvcAutoscaler) leaderElectorRole() *rbacv1.Role {
 				Verbs: []string{
 					"create",
 					"patch",
-					// TODO: Andrey: P1: We don't need those, right?
-					//"get",
-					//"list",
-					//"watch",
 				},
 			},
 		},

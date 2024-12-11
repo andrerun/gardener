@@ -76,11 +76,177 @@ var _ = Describe("pvcAutoscaler", func() {
 		controllerClusterRoleBinding *rbacv1.ClusterRoleBinding
 		proxyClusterRole             *rbacv1.ClusterRole
 		proxyClusterRoleBinding      *rbacv1.ClusterRoleBinding
-		deployment                   *appsv1.Deployment
 		service                      *corev1.Service
 		serviceMonitor               *monitoringv1.ServiceMonitor
 		podDisruptionBudgetFor       func(bool) *policyv1.PodDisruptionBudget
 		vpa                          *vpaautoscalingv1.VerticalPodAutoscaler
+
+		deploymentFor = func(isUsingAuthorizedMetrics bool) *appsv1.Deployment {
+			deployment := &appsv1.Deployment{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "pvc-autoscaler",
+					Namespace: namespace,
+					Labels: map[string]string{
+						"app":                 "pvc-autoscaler",
+						"gardener.cloud/role": "pvc-autoscaler",
+						"high-availability-config.resources.gardener.cloud/type": "controller",
+					},
+				},
+				Spec: appsv1.DeploymentSpec{
+					Replicas:             ptr.To[int32](1),
+					RevisionHistoryLimit: ptr.To[int32](2),
+					Selector: &metav1.LabelSelector{
+						MatchLabels: map[string]string{
+							"app":                 "pvc-autoscaler",
+							"gardener.cloud/role": "pvc-autoscaler",
+						},
+					},
+					Template: corev1.PodTemplateSpec{
+						ObjectMeta: metav1.ObjectMeta{
+							Annotations: map[string]string{
+								"kubectl.kubernetes.io/default-container": "pvc-autoscaler",
+							},
+							Labels: map[string]string{
+								"app":                              "pvc-autoscaler",
+								"gardener.cloud/role":              "pvc-autoscaler",
+								"networking.gardener.cloud/to-dns": "allowed",
+								"networking.gardener.cloud/to-runtime-apiserver":                   "allowed",
+								"networking.resources.gardener.cloud/to-prometheus-cache-tcp-9090": "allowed",
+							},
+						},
+						Spec: corev1.PodSpec{
+							Containers: []corev1.Container{
+								{
+									Args: []string{
+										"--health-probe-bind-address=:8081",
+										"--metrics-bind-address=:8080",
+										"--leader-elect",
+										"--interval=60s",
+										"--prometheus-address=http://prometheus-cache.garden.svc.cluster.local:80",
+									},
+									Command: []string{"/manager"},
+									Image:   image,
+									LivenessProbe: &corev1.Probe{
+										ProbeHandler: corev1.ProbeHandler{
+											HTTPGet: &corev1.HTTPGetAction{
+												Path:   "/healthz",
+												Scheme: corev1.URISchemeHTTP,
+												Port:   intstr.FromInt32(8081),
+											},
+										},
+										InitialDelaySeconds: 20,
+										PeriodSeconds:       20,
+										TimeoutSeconds:      5,
+									},
+									Name: "pvc-autoscaler",
+									Ports: []corev1.ContainerPort{
+										{
+											ContainerPort: 8080,
+											Name:          "metrics",
+											Protocol:      corev1.ProtocolTCP,
+										},
+									},
+									ReadinessProbe: &corev1.Probe{
+										ProbeHandler: corev1.ProbeHandler{
+											HTTPGet: &corev1.HTTPGetAction{
+												Path:   "/readyz",
+												Port:   intstr.FromInt32(8081),
+												Scheme: corev1.URISchemeHTTP,
+											},
+										},
+										InitialDelaySeconds: 5,
+										PeriodSeconds:       10,
+										TimeoutSeconds:      5,
+									},
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("4"),
+											corev1.ResourceMemory: resource.MustParse("10Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("10m"),
+											corev1.ResourceMemory: resource.MustParse("64Mi"),
+										},
+									},
+									SecurityContext: &corev1.SecurityContext{
+										AllowPrivilegeEscalation: ptr.To(false),
+										Capabilities: &corev1.Capabilities{
+											Drop: []corev1.Capability{"ALL"},
+										},
+									},
+								},
+								{
+									Args: []string{
+										"--secure-listen-address=0.0.0.0:8443",
+										"--tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt",
+										"--tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key",
+										"--upstream=http://127.0.0.1:8080/",
+										"--logtostderr=true",
+										"--v=2",
+									},
+									Image: "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0",
+									Name:  "kube-rbac-proxy",
+									Ports: []corev1.ContainerPort{
+										{
+											ContainerPort: 8443,
+											Name:          "secure-metrics",
+											Protocol:      corev1.ProtocolTCP,
+										},
+									},
+									Resources: corev1.ResourceRequirements{
+										Limits: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("1"),
+											corev1.ResourceMemory: resource.MustParse("2Gi"),
+										},
+										Requests: corev1.ResourceList{
+											corev1.ResourceCPU:    resource.MustParse("5m"),
+											corev1.ResourceMemory: resource.MustParse("64Mi"),
+										},
+									},
+									SecurityContext: &corev1.SecurityContext{
+										AllowPrivilegeEscalation: ptr.To(false),
+										Capabilities: &corev1.Capabilities{
+											Drop: []corev1.Capability{"ALL"},
+										},
+									},
+									VolumeMounts: []corev1.VolumeMount{
+										{
+											MountPath: "/var/run/secrets/gardener.cloud/tls",
+											Name:      "tls",
+											ReadOnly:  true,
+										},
+									},
+								},
+							},
+							PriorityClassName: "gardener-system-700",
+							SecurityContext: &corev1.PodSecurityContext{
+								RunAsNonRoot: ptr.To(true),
+							},
+							ServiceAccountName:            "pvc-autoscaler",
+							TerminationGracePeriodSeconds: ptr.To(int64(10)),
+							Volumes: []corev1.Volume{
+								{
+									Name: "tls",
+									VolumeSource: corev1.VolumeSource{
+										Secret: &corev1.SecretVolumeSource{
+											DefaultMode: ptr.To(int32(420)),
+											SecretName:  "pvc-autoscaler-tls",
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}
+
+			if !isUsingAuthorizedMetrics {
+				deployment.Spec.Template.Spec.Containers = deployment.Spec.Template.Spec.Containers[:1]
+				deployment.Spec.Template.Spec.Volumes = nil
+			}
+
+			return deployment
+		}
 	)
 
 	BeforeEach(func() {
@@ -281,163 +447,6 @@ var _ = Describe("pvcAutoscaler", func() {
 				},
 			},
 		}
-		deployment = &appsv1.Deployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      "pvc-autoscaler",
-				Namespace: namespace,
-				Labels: map[string]string{
-					"app":                 "pvc-autoscaler",
-					"gardener.cloud/role": "pvc-autoscaler",
-					"high-availability-config.resources.gardener.cloud/type": "controller",
-				},
-			},
-			Spec: appsv1.DeploymentSpec{
-				Replicas:             ptr.To[int32](1),
-				RevisionHistoryLimit: ptr.To[int32](2),
-				Selector: &metav1.LabelSelector{
-					MatchLabels: map[string]string{
-						"app":                 "pvc-autoscaler",
-						"gardener.cloud/role": "pvc-autoscaler",
-					},
-				},
-				Template: corev1.PodTemplateSpec{
-					ObjectMeta: metav1.ObjectMeta{
-						Annotations: map[string]string{
-							"kubectl.kubernetes.io/default-container": "pvc-autoscaler",
-						},
-						Labels: map[string]string{
-							"app":                              "pvc-autoscaler",
-							"gardener.cloud/role":              "pvc-autoscaler",
-							"networking.gardener.cloud/to-dns": "allowed",
-							"networking.gardener.cloud/to-runtime-apiserver":                   "allowed",
-							"networking.resources.gardener.cloud/to-prometheus-cache-tcp-9090": "allowed",
-						},
-					},
-					Spec: corev1.PodSpec{
-						Containers: []corev1.Container{
-							{
-								Args: []string{
-									"--health-probe-bind-address=:8081",
-									"--metrics-bind-address=:8080",
-									"--leader-elect",
-									"--interval=60s",
-									"--prometheus-address=http://prometheus-cache.garden.svc.cluster.local:80",
-								},
-								Command: []string{"/manager"},
-								Image:   image,
-								LivenessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path:   "/healthz",
-											Scheme: corev1.URISchemeHTTP,
-											Port:   intstr.FromInt32(8081),
-										},
-									},
-									InitialDelaySeconds: 20,
-									PeriodSeconds:       20,
-									TimeoutSeconds:      5,
-								},
-								Name: "pvc-autoscaler",
-								Ports: []corev1.ContainerPort{
-									{
-										ContainerPort: 8080,
-										Name:          "metrics",
-										Protocol:      corev1.ProtocolTCP,
-									},
-								},
-								ReadinessProbe: &corev1.Probe{
-									ProbeHandler: corev1.ProbeHandler{
-										HTTPGet: &corev1.HTTPGetAction{
-											Path:   "/readyz",
-											Port:   intstr.FromInt32(8081),
-											Scheme: corev1.URISchemeHTTP,
-										},
-									},
-									InitialDelaySeconds: 5,
-									PeriodSeconds:       10,
-									TimeoutSeconds:      5,
-								},
-								Resources: corev1.ResourceRequirements{
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("4"),
-										corev1.ResourceMemory: resource.MustParse("10Gi"),
-									},
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("10m"),
-										corev1.ResourceMemory: resource.MustParse("64Mi"),
-									},
-								},
-								SecurityContext: &corev1.SecurityContext{
-									AllowPrivilegeEscalation: ptr.To(false),
-									Capabilities: &corev1.Capabilities{
-										Drop: []corev1.Capability{"ALL"},
-									},
-								},
-							},
-							{
-								Args: []string{
-									"--secure-listen-address=0.0.0.0:8443",
-									"--tls-cert-file=/var/run/secrets/gardener.cloud/tls/tls.crt",
-									"--tls-private-key-file=/var/run/secrets/gardener.cloud/tls/tls.key",
-									"--upstream=http://127.0.0.1:8080/",
-									"--logtostderr=true",
-									"--v=2",
-								},
-								Image: "gcr.io/kubebuilder/kube-rbac-proxy:v0.15.0",
-								Name:  "kube-rbac-proxy",
-								Ports: []corev1.ContainerPort{
-									{
-										ContainerPort: 8443,
-										Name:          "secure-metrics",
-										Protocol:      corev1.ProtocolTCP,
-									},
-								},
-								Resources: corev1.ResourceRequirements{
-									Limits: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("1"),
-										corev1.ResourceMemory: resource.MustParse("2Gi"),
-									},
-									Requests: corev1.ResourceList{
-										corev1.ResourceCPU:    resource.MustParse("5m"),
-										corev1.ResourceMemory: resource.MustParse("64Mi"),
-									},
-								},
-								SecurityContext: &corev1.SecurityContext{
-									AllowPrivilegeEscalation: ptr.To(false),
-									Capabilities: &corev1.Capabilities{
-										Drop: []corev1.Capability{"ALL"},
-									},
-								},
-								VolumeMounts: []corev1.VolumeMount{
-									{
-										MountPath: "/var/run/secrets/gardener.cloud/tls",
-										Name:      "tls",
-										ReadOnly:  true,
-									},
-								},
-							},
-						},
-						PriorityClassName: "gardener-system-700",
-						SecurityContext: &corev1.PodSecurityContext{
-							RunAsNonRoot: ptr.To(true),
-						},
-						ServiceAccountName:            "pvc-autoscaler",
-						TerminationGracePeriodSeconds: ptr.To(int64(10)),
-						Volumes: []corev1.Volume{
-							{
-								Name: "tls",
-								VolumeSource: corev1.VolumeSource{
-									Secret: &corev1.SecretVolumeSource{
-										DefaultMode: ptr.To(int32(420)),
-										SecretName:  "pvc-autoscaler-tls",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		}
 		service = &corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "pvc-autoscaler",
@@ -603,7 +612,7 @@ var _ = Describe("pvcAutoscaler", func() {
 				controllerClusterRoleBinding,
 				proxyClusterRole,
 				proxyClusterRoleBinding,
-				deployment,
+				deploymentFor(false),
 				service,
 				serviceMonitor,
 				vpa,

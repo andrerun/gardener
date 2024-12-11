@@ -60,7 +60,7 @@ spec:
               memory: 10Gi
             requests:
               cpu: 10m
-              memory: 64Mi # TODO: Andrey: P2: Deploy on Canary and update based on actual usage
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

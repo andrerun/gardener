@@ -84,15 +84,19 @@ func (b *Botanist) DefaultPrometheus(ctx context.Context) (prometheus.Interface,
 		externalLabels = utils.MergeStringMaps(externalLabels, b.Config.Monitoring.Shoot.ExternalLabels)
 	}
 
-	// TODO: Andrey: P1: This isn't quite right. We do use the default storage class when creating observability volumes.
-	// However, in the case of reconciling an existing instance, the default class might have changed since
-	// the PVC was created. For a preexisting volume, check its actual class, don't assume it's still the default.
 	var isStorageAutoscalingEnabled bool
-	if isStorageResizable, err := kubernetesutils.IsDefaultStorageClassResizable(ctx, b.SeedClientSet.Client()); err == nil {
-		isStorageAutoscalingEnabled =
-			isStorageResizable && features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes)
-	} else {
-		return nil, err
+	if features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes) {
+		var err error
+		// This isn't quite right. We do use the default storage class when creating Prometheus volumes, but the default class
+		// can change. So the outcome of our check here may not reflect the state of (some) preexisting volumes, and of
+		// volumes created in the future. However, that would only be a problem when the cluster transitions from a state
+		// where the default class supports resize, to a state where the default class does not. Such transition is seen as
+		// extremely unlikely in a productive environment, and does not justify the complex implementation which would be
+		// required to handle it.
+		isStorageAutoscalingEnabled, err = kubernetesutils.IsDefaultStorageClassResizable(ctx, b.SeedClientSet.Client())
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	var storageCapacityAsString string

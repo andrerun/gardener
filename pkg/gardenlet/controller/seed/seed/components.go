@@ -796,14 +796,22 @@ func (r *Reconciler) newPvcAutoscaler(secretsManager secretsmanager.Interface) (
 		imagevector.ContainerImageNamePvcAutoscaler,
 		imagevectorutils.RuntimeVersion(r.SeedVersion.String()),
 		imagevectorutils.TargetVersion(r.SeedVersion.String()))
+	if err != nil {
+		return nil, err
+	}
 
+	kubeRBACProxyImage, err := imagevector.Containers().FindImage(
+		imagevector.ContainerImageNameKubeRbacProxy,
+		imagevectorutils.RuntimeVersion(r.SeedVersion.String()),
+		imagevectorutils.TargetVersion(r.SeedVersion.String()))
 	if err != nil {
 		return nil, err
 	}
 
 	values := pvcautoscaler.Values{
-		Image:             image.String(),
-		KubernetesVersion: r.SeedVersion,
+		Image:              image.String(),
+		KubeRBACProxyImage: kubeRBACProxyImage.String(),
+		KubernetesVersion:  r.SeedVersion,
 	}
 
 	pvaDeployer := pvcautoscaler.New(r.GardenNamespace, values, r.SeedClientSet.Client(), secretsManager)
