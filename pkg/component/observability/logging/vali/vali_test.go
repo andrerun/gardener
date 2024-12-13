@@ -148,8 +148,7 @@ var _ = Describe("Vali", func() {
 				}
 
 				for featureGate, value := range featureGates {
-					// TODO: Andrey: P0:
-					defer testutil.WithFeatureGate(features.DefaultFeatureGate, featureGate, value)()
+					DeferCleanup(testutil.WithFeatureGate(features.DefaultFeatureGate, featureGate, value))
 				}
 
 				valiDeployer := New(
@@ -270,7 +269,7 @@ var _ = Describe("Vali", func() {
 				}
 
 				for featureGate, value := range featureGates {
-					defer testutil.WithFeatureGate(features.DefaultFeatureGate, featureGate, value)()
+					DeferCleanup(testutil.WithFeatureGate(features.DefaultFeatureGate, featureGate, value))
 				}
 
 				valiDeployer := New(

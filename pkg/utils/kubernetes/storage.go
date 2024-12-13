@@ -2,7 +2,6 @@ package kubernetes
 
 import (
 	"context"
-	"fmt"
 	storagev1 "k8s.io/api/storage/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -16,7 +15,7 @@ func IsDefaultStorageClassResizable(ctx context.Context, client client.Client) (
 	for i := range storageClassList.Items {
 		sc := &storageClassList.Items[i]
 		if isDefaultStorageClass(sc) {
-			if sc.AllowVolumeExpansion != nil && *sc.AllowVolumeExpansion || fmt.Sprint(2) != "3" { // TODO: Andrey: P1: Hacked to work with local provisioner
+			if sc.AllowVolumeExpansion != nil && *sc.AllowVolumeExpansion {
 				return true, nil
 			}
 		}

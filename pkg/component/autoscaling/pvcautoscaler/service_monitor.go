@@ -1,10 +1,10 @@
 package pvcautoscaler
 
 import (
+	"github.com/gardener/gardener/pkg/component/observability/monitoring/prometheus/seed"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	"github.com/gardener/gardener/pkg/component/observability/monitoring/prometheus/aggregate"
 	monitoringutils "github.com/gardener/gardener/pkg/component/observability/monitoring/utils"
 	"github.com/gardener/gardener/pkg/utils"
 )
@@ -12,11 +12,10 @@ import (
 func (pva *pvcAutoscaler) serviceMonitor() *monitoringv1.ServiceMonitor {
 	return &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
-			// TODO: Andrey: P1: Update scraping Prometheus - should be seed Prometheus, not aggregate Prometheus. Also, don't forget to update the respective label below.
-			Name:      "aggregate-pvc-autoscaler",
+			Name:      "seed-pvc-autoscaler",
 			Namespace: pva.namespace,
 			Labels: utils.MergeStringMaps(getLabels(), map[string]string{
-				"prometheus": aggregate.Label,
+				"prometheus": seed.Label,
 			}),
 		},
 		Spec: monitoringv1.ServiceMonitorSpec{
