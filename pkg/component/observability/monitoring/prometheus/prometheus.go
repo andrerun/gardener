@@ -5,6 +5,7 @@
 package prometheus
 
 import (
+	pvaconstants "github.com/gardener/gardener/pkg/component/autoscaling/pvcautoscaler/constants"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -90,15 +91,15 @@ func (p *prometheus) prometheus(cortexConfigMap *corev1.ConfigMap) *monitoringv1
 	if p.values.StorageAutoscalingEnabled {
 		pvcMetadata := &obj.Spec.CommonPrometheusFields.Storage.VolumeClaimTemplate.EmbeddedObjectMetadata
 		pvcMetadata.Annotations = map[string]string{
-			"pvc.autoscaling.gardener.cloud/is-enabled":    "true",
-			"pvc.autoscaling.gardener.cloud/min-threshold": "1Gi",
+			pvaconstants.AnnotationIsEnabled:    "true",
+			pvaconstants.AnnotationMinThreshold: "1Gi",
 		}
 		if p.values.StorageAutoscalingMaxAllowed != nil {
-			pvcMetadata.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] =
+			pvcMetadata.Annotations[pvaconstants.AnnotationMaxCapacity] =
 				p.values.StorageAutoscalingMaxAllowed.String()
 		}
 		if p.values.StorageAutoscalingMinThreshold != nil {
-			pvcMetadata.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] =
+			pvcMetadata.Annotations[pvaconstants.AnnotationMinThreshold] =
 				p.values.StorageAutoscalingMinThreshold.String()
 		}
 	}

@@ -7,6 +7,7 @@ package utils_test
 import (
 	"context"
 	"github.com/gardener/gardener/pkg/client/kubernetes"
+	pvaconstants "github.com/gardener/gardener/pkg/component/autoscaling/pvcautoscaler/constants"
 	monitoringutils "github.com/gardener/gardener/pkg/component/observability/monitoring/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -82,9 +83,9 @@ var _ = Describe("Utils", func() {
 			var actualPvc corev1.PersistentVolumeClaim
 			Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, pvcName}, &actualPvc)).To(Succeed())
 			Expect(actualPvc.Annotations).NotTo(BeNil())
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).To(Equal("true"))
-			Expect(actualPvc.Annotations).NotTo(HaveKey("pvc.autoscaling.gardener.cloud/min-threshold"))
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]).To(Equal(maxAllowed))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).To(Equal("true"))
+			Expect(actualPvc.Annotations).NotTo(HaveKey(pvaconstants.AnnotationMinThreshold))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationMaxCapacity]).To(Equal(maxAllowed))
 		})
 
 		It("should only affect PVCs which match the specified selector", func() {
@@ -114,7 +115,7 @@ var _ = Describe("Utils", func() {
 					Labels: map[string]string{
 						pvcLabelKey: pvcLabelValue,
 					},
-					Annotations: map[string]string{"pvc.autoscaling.gardener.cloud/is-enabled": "false"},
+					Annotations: map[string]string{pvaconstants.AnnotationIsEnabled: "false"},
 				},
 			})).To(Succeed())
 
@@ -125,8 +126,8 @@ var _ = Describe("Utils", func() {
 			var actualPvc corev1.PersistentVolumeClaim
 			Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, pvcName}, &actualPvc)).To(Succeed())
 			Expect(actualPvc.Annotations).NotTo(BeNil())
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).To(Equal("false"))
-			Expect(actualPvc.Annotations).NotTo(HaveKey("pvc.autoscaling.gardener.cloud/max-capacity"))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).To(Equal("false"))
+			Expect(actualPvc.Annotations).NotTo(HaveKey(pvaconstants.AnnotationMaxCapacity))
 		})
 
 		It("should not to modify max-capacity if the PVC already has it configured", func() {
@@ -137,7 +138,7 @@ var _ = Describe("Utils", func() {
 					Labels: map[string]string{
 						pvcLabelKey: pvcLabelValue,
 					},
-					Annotations: map[string]string{"pvc.autoscaling.gardener.cloud/max-capacity": maxAllowed},
+					Annotations: map[string]string{pvaconstants.AnnotationMaxCapacity: maxAllowed},
 				},
 			})).To(Succeed())
 
@@ -148,8 +149,8 @@ var _ = Describe("Utils", func() {
 			var actualPvc corev1.PersistentVolumeClaim
 			Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, pvcName}, &actualPvc)).To(Succeed())
 			Expect(actualPvc.Annotations).NotTo(BeNil())
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).To(Equal("true"))
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]).To(Equal(maxAllowed))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).To(Equal("true"))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationMaxCapacity]).To(Equal(maxAllowed))
 		})
 
 		It("should configure applicable PVCs, even if some PVCs were skipped due to preexisting configuration", func() {
@@ -160,7 +161,7 @@ var _ = Describe("Utils", func() {
 					Labels: map[string]string{
 						pvcLabelKey: pvcLabelValue,
 					},
-					Annotations: map[string]string{"pvc.autoscaling.gardener.cloud/is-enabled": "false"},
+					Annotations: map[string]string{pvaconstants.AnnotationIsEnabled: "false"},
 				},
 			})).To(Succeed())
 			Expect(fakeClient.Create(ctx, &corev1.PersistentVolumeClaim{
@@ -180,12 +181,12 @@ var _ = Describe("Utils", func() {
 			var actualPvc corev1.PersistentVolumeClaim
 			Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, pvcName}, &actualPvc)).To(Succeed())
 			Expect(actualPvc.Annotations).NotTo(BeNil())
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).To(Equal("false"))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).To(Equal("false"))
 
 			Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, pvcName2}, &actualPvc)).To(Succeed())
 			Expect(actualPvc.Annotations).NotTo(BeNil())
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).To(Equal("true"))
-			Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]).To(Equal(maxAllowed))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).To(Equal("true"))
+			Expect(actualPvc.Annotations[pvaconstants.AnnotationMaxCapacity]).To(Equal(maxAllowed))
 		})
 	})
 })

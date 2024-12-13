@@ -262,7 +262,7 @@ var _ = Describe("pvcAutoscaler", func() {
 		component = New(namespace, values, c, sm)
 		consistOf = NewManagedResourceConsistOfObjectsMatcher(c)
 
-		By("Create secrets managed outside of this package for whose secretsmanager.Get() will be called")
+		By("Create secrets managed outside of this package for which secretsmanager.Get() will be called")
 		caSecret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "ca-seed", Namespace: namespace},
 			Data: map[string][]byte{

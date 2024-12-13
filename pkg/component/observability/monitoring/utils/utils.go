@@ -6,6 +6,7 @@ package utils
 
 import (
 	"context"
+	pvaconstants "github.com/gardener/gardener/pkg/component/autoscaling/pvcautoscaler/constants"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -39,6 +40,10 @@ func Labels(prometheusName string) map[string]string {
 	return map[string]string{"prometheus": prometheusName}
 }
 
+// EnableAutoscalingOnExistingPVCs configures autoscaling for the PVCs which meet all the following conditions:
+// - are in the specified namespace
+// - match the specified label selector
+// - do not have autoscaling configuration already applied
 func EnableAutoscalingOnExistingPVCs(
 	ctx context.Context, c client.Client, namespace string, shouldEnable bool, maxAllowed string, selector map[string]string) error {
 
@@ -53,13 +58,13 @@ func EnableAutoscalingOnExistingPVCs(
 	}
 
 	for i := range pvcList.Items {
-		if _, ok := pvcList.Items[i].Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]; !ok {
+		if _, ok := pvcList.Items[i].Annotations[pvaconstants.AnnotationIsEnabled]; !ok {
 			pvc := pvcList.Items[i].DeepCopy()
 
 			if pvc.Annotations == nil {
 				pvc.Annotations = map[string]string{}
 			}
-			pvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"] = strconv.FormatBool(shouldEnable)
+			pvc.Annotations[pvaconstants.AnnotationIsEnabled] = strconv.FormatBool(shouldEnable)
 
 			if maxAllowed != "" {
 				if _, ok := pvcList.Items[i].Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]; !ok {

@@ -9,6 +9,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	pvaconstants "github.com/gardener/gardener/pkg/component/autoscaling/pvcautoscaler/constants"
 	"github.com/gardener/gardener/pkg/features"
 	"text/template"
 
@@ -269,7 +270,7 @@ func (v *vali) Deploy(ctx context.Context) error {
 
 	if isStorageAutoscalingEnabled {
 		err = monitoringutils.EnableAutoscalingOnExistingPVCs(
-			ctx, v.client, v.namespace, isStorageAutoscalingEnabled, sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/max-capacity"],
+			ctx, v.client, v.namespace, isStorageAutoscalingEnabled, sts.Spec.VolumeClaimTemplates[0].Annotations[pvaconstants.AnnotationMaxCapacity],
 			map[string]string{
 				v1beta1constants.GardenRole: v1beta1constants.GardenRoleLogging,
 				v1beta1constants.LabelRole:  "logging",
@@ -694,7 +695,7 @@ func (v *vali) getStatefulSet(
 		if pvcTemplate.ObjectMeta.Annotations == nil {
 			pvcTemplate.ObjectMeta.Annotations = make(map[string]string)
 		}
-		pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"] = "true"
+		pvcTemplate.ObjectMeta.Annotations[pvaconstants.AnnotationIsEnabled] = "true"
 
 		if v.values.Storage != nil {
 			// In autoscaling mode, the initial request and MaxAllowed are based on the static request, specified for
@@ -711,18 +712,18 @@ func (v *vali) getStatefulSet(
 			maxAllowed.Mul(2)
 
 			// Min threshold is 20% of initial autoscaling request, rounded to the megabyte
-			autoscalingRequestBytesPercent20 := (autoscalingRequest.ScaledValue(0) + 3) / 5
+			autoscalingRequestBytesPercent20 := (autoscalingRequest.ScaledValue(0) + 2) / 5
 			autoscalingRequestBytesPercent20MegabyteRounded :=
 				(autoscalingRequestBytesPercent20 + 512*1024) / 1024 / 1024 * 1024 * 1024
 			minThreshold := resource.NewQuantity(autoscalingRequestBytesPercent20MegabyteRounded, resource.BinarySI)
 
 			pvcTemplate.Spec.Resources.Requests[corev1.ResourceStorage] = autoscalingRequest
-			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = maxAllowed.String()
-			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = minThreshold.String()
+			pvcTemplate.ObjectMeta.Annotations[pvaconstants.AnnotationMaxCapacity] = maxAllowed.String()
+			pvcTemplate.ObjectMeta.Annotations[pvaconstants.AnnotationMinThreshold] = minThreshold.String()
 		} else {
 			pvcTemplate.Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("1Gi")
-			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = "60Gi"
-			pvcTemplate.ObjectMeta.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = "200Mi"
+			pvcTemplate.ObjectMeta.Annotations[pvaconstants.AnnotationMaxCapacity] = "60Gi"
+			pvcTemplate.ObjectMeta.Annotations[pvaconstants.AnnotationMinThreshold] = "200Mi"
 		}
 	} else {
 		if v.values.Storage != nil {

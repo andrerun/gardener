@@ -6,6 +6,7 @@ package prometheus_test
 
 import (
 	"context"
+	pvaconstants "github.com/gardener/gardener/pkg/component/autoscaling/pvcautoscaler/constants"
 	"time"
 
 	"github.com/Masterminds/semver/v3"
@@ -319,9 +320,9 @@ honor_labels: true`
 				if pvc.Annotations == nil {
 					pvc.Annotations = make(map[string]string)
 				}
-				pvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"] = "true"
-				pvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = storageAutoscalingMaxAllowed.String()
-				pvc.Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = storageAutoscalingMinThreshold.String()
+				pvc.Annotations[pvaconstants.AnnotationIsEnabled] = "true"
+				pvc.Annotations[pvaconstants.AnnotationMaxCapacity] = storageAutoscalingMaxAllowed.String()
+				pvc.Annotations[pvaconstants.AnnotationMinThreshold] = storageAutoscalingMinThreshold.String()
 			}
 
 			return obj
@@ -1452,10 +1453,10 @@ query_range:
 					Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, preexistingPvcName}, actualPvc)).
 						To(Succeed())
 					Expect(actualPvc.Annotations).NotTo(BeNil())
-					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).
+					Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).
 						To(Equal("true"))
-					Expect(actualPvc.Annotations).NotTo(HaveKey("pvc.autoscaling.gardener.cloud/min-threshold"))
-					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]).
+					Expect(actualPvc.Annotations).NotTo(HaveKey(pvaconstants.AnnotationMinThreshold))
+					Expect(actualPvc.Annotations[pvaconstants.AnnotationMaxCapacity]).
 						To(Equal(storageAutoscalingMaxAllowed.String()))
 				})
 			})
@@ -1476,7 +1477,7 @@ query_range:
 								"app.kubernetes.io/name":       "prometheus",
 								"prometheus":                   name,
 							},
-							Annotations: map[string]string{"pvc.autoscaling.gardener.cloud/is-enabled": "true"},
+							Annotations: map[string]string{pvaconstants.AnnotationIsEnabled: "true"},
 						},
 					})).To(Succeed())
 					values.StorageAutoscalingEnabled = false
@@ -1489,7 +1490,7 @@ query_range:
 					Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, preexistingPvcName}, actualPvc)).
 						To(Succeed())
 					Expect(actualPvc.Annotations).NotTo(BeNil())
-					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).
+					Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).
 						To(Equal("true"))
 				})
 			})
@@ -1511,8 +1512,8 @@ query_range:
 								"prometheus":                   name,
 							},
 							Annotations: map[string]string{"" +
-								"pvc.autoscaling.gardener.cloud/is-enabled": "false",
-								"pvc.autoscaling.gardener.cloud/max-capacity": "100Gi",
+								pvaconstants.AnnotationIsEnabled: "false",
+								pvaconstants.AnnotationMaxCapacity: "100Gi",
 							},
 						},
 					})).To(Succeed())
@@ -1526,9 +1527,9 @@ query_range:
 					Expect(fakeClient.Get(ctx, client.ObjectKey{namespace, preexistingPvcName}, actualPvc)).
 						To(Succeed())
 					Expect(actualPvc.Annotations).NotTo(BeNil())
-					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/is-enabled"]).
+					Expect(actualPvc.Annotations[pvaconstants.AnnotationIsEnabled]).
 						To(Equal("false"))
-					Expect(actualPvc.Annotations["pvc.autoscaling.gardener.cloud/max-capacity"]).
+					Expect(actualPvc.Annotations[pvaconstants.AnnotationMaxCapacity]).
 						To(Equal("100Gi"))
 				})
 			})

@@ -13,8 +13,9 @@ func IsDefaultStorageClassResizable(ctx context.Context, client client.Client) (
 		return false, err
 	}
 
-	for _, sc := range storageClassList.Items {
-		if isDefaultStorageClass(&sc) {
+	for i := range storageClassList.Items {
+		sc := &storageClassList.Items[i]
+		if isDefaultStorageClass(sc) {
 			if sc.AllowVolumeExpansion != nil && *sc.AllowVolumeExpansion || fmt.Sprint(2) != "3" { // TODO: Andrey: P1: Hacked to work with local provisioner
 				return true, nil
 			}

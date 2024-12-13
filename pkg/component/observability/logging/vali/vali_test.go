@@ -7,6 +7,7 @@ package vali_test
 import (
 	"context"
 	"fmt"
+	pvaconstants "github.com/gardener/gardener/pkg/component/autoscaling/pvcautoscaler/constants"
 	"github.com/gardener/gardener/pkg/features"
 	testutil "github.com/gardener/gardener/pkg/utils/test"
 	. "github.com/onsi/ginkgo/v2"
@@ -89,8 +90,7 @@ var _ = Describe("Vali", func() {
 						Annotations: map[string]string{
 							"storageclass.kubernetes.io/is-default-class": "true",
 						},
-						Name:      "my-storage-class",
-						Namespace: "",
+						Name: "my-storage-class",
 					},
 					Provisioner:          "my-storage-provisioner",
 					AllowVolumeExpansion: ptr.To(true),
@@ -148,6 +148,7 @@ var _ = Describe("Vali", func() {
 				}
 
 				for featureGate, value := range featureGates {
+					// TODO: Andrey: P0:
 					defer testutil.WithFeatureGate(features.DefaultFeatureGate, featureGate, value)()
 				}
 
@@ -1500,9 +1501,9 @@ wait
 		if sts.Spec.VolumeClaimTemplates[0].Annotations == nil {
 			sts.Spec.VolumeClaimTemplates[0].Annotations = make(map[string]string)
 		}
-		sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/is-enabled"] = "true"
-		sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/max-capacity"] = "120Gi"
-		sts.Spec.VolumeClaimTemplates[0].Annotations["pvc.autoscaling.gardener.cloud/min-threshold"] = "614Mi"
+		sts.Spec.VolumeClaimTemplates[0].Annotations[pvaconstants.AnnotationIsEnabled] = "true"
+		sts.Spec.VolumeClaimTemplates[0].Annotations[pvaconstants.AnnotationMaxCapacity] = "120Gi"
+		sts.Spec.VolumeClaimTemplates[0].Annotations[pvaconstants.AnnotationMinThreshold] = "614Mi"
 		sts.Spec.VolumeClaimTemplates[0].Spec.Resources.Requests[corev1.ResourceStorage] = resource.MustParse("3Gi")
 	}
 

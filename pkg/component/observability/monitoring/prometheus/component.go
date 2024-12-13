@@ -255,8 +255,13 @@ func (p *prometheus) Deploy(ctx context.Context) error {
 	}
 
 	if p.values.StorageAutoscalingEnabled {
+		maxAllowed := ""
+		if p.values.StorageAutoscalingMaxAllowed != nil {
+			maxAllowed = p.values.StorageAutoscalingMaxAllowed.String()
+		}
+
 		err = monitoringutils.EnableAutoscalingOnExistingPVCs(
-			ctx, p.client, p.namespace, p.values.StorageAutoscalingEnabled, p.values.StorageAutoscalingMaxAllowed.String(),
+			ctx, p.client, p.namespace, p.values.StorageAutoscalingEnabled, maxAllowed,
 			map[string]string{
 				"app.kubernetes.io/instance":   p.values.Name,
 				"app.kubernetes.io/managed-by": "prometheus-operator",

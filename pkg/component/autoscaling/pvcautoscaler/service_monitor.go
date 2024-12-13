@@ -12,6 +12,7 @@ import (
 func (pva *pvcAutoscaler) serviceMonitor() *monitoringv1.ServiceMonitor {
 	return &monitoringv1.ServiceMonitor{
 		ObjectMeta: metav1.ObjectMeta{
+			// TODO: Andrey: P1: Update scraping Prometheus - should be seed Prometheus, not aggregate Prometheus. Also, don't forget to update the respective label below.
 			Name:      "aggregate-pvc-autoscaler",
 			Namespace: pva.namespace,
 			Labels: utils.MergeStringMaps(getLabels(), map[string]string{
@@ -23,7 +24,7 @@ func (pva *pvcAutoscaler) serviceMonitor() *monitoringv1.ServiceMonitor {
 				{
 					Port:   metricsPortName,
 					Scheme: "http",
-					// Andrey: P2: Only needed with HTTPS metrics
+					// Only needed with HTTPS metrics:
 					//TLSConfig: &monitoringv1.TLSConfig{
 					//	InsecureSkipVerify: true,
 					//},

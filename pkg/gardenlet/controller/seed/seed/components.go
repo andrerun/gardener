@@ -197,12 +197,12 @@ func (r *Reconciler) instantiateComponents(
 	}
 
 	// observability components
-	// This isn't quite right. We do use the default storage class when creating observability volumes.
-	// However, in the case of reconciling an existing instance, the default class might have changed since
-	// the PVC was created. For a preexisting volume, it would be better to check its actual class, not
-	// assume it's still the default.
 	isObservabilityStorageAutoscalingEnabled := features.DefaultFeatureGate.Enabled(features.PVCAutoscalingForObservabilityVolumes)
 	if isObservabilityStorageAutoscalingEnabled {
+		// This isn't quite right. We do use the default storage class when creating observability volumes.
+		// However, in the case of reconciling an existing instance, the default class might have changed since
+		// the PVC was created. For a preexisting volume, it would be better to check its actual class, not
+		// assume it's still the default.
 		isObservabilityStorageAutoscalingEnabled, err = kubernetesutils.IsDefaultStorageClassResizable(ctx, r.SeedClientSet.Client())
 		if err != nil {
 			return
@@ -790,7 +790,7 @@ func (r *Reconciler) newKubeStateMetrics() (component.DeployWaiter, error) {
 	)
 }
 
-// newGardenerCustomMetrics creates a [component.Deployer] for the gardener-custom-metrics component.
+// newPvcAutoscaler creates a [component.Deployer] for the pvc-autoscaler component.
 func (r *Reconciler) newPvcAutoscaler(secretsManager secretsmanager.Interface) (component.DeployWaiter, error) {
 	image, err := imagevector.Containers().FindImage(
 		imagevector.ContainerImageNamePvcAutoscaler,
